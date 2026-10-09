@@ -52,8 +52,10 @@ $("go").addEventListener("click", async () => {
   const li0 = paso("Revisando a qué fuentes puede llegar esta página…");
   const res = await Promise.all(SONDAS.map(async s => [s[0], s[1], await sonda(s[1])]));
   li0.innerHTML = "Diagnóstico de conexión:<br>" + res.map(r => `<span class="t">${r[2]} · ${r[0]}</span>`).join("<br>");
-  const buena = res.find(r => r[2].startsWith("✔") && r[1].endsWith("pyodide.js"));
-  if(!buena){ paso("<b>Esta página no puede descargar Python desde ninguna fuente.</b> Mandame una captura de esta pantalla."); $("go").disabled = false; return; }
+  const okk = n => res.find(r => r[0]===n && r[2].startsWith("✔"));
+  // hace falta la distribución completa (trae numpy y scipy): pyodide.js y su lista de paquetes en la misma carpeta
+  const buena = (okk("Python desde jsDelivr /pyodide/") && okk("Lista de paquetes (jsDelivr /pyodide/)")) ? okk("Python desde jsDelivr /pyodide/") : null;
+  if(!buena){ paso("<b>Esta página no puede descargar la distribución completa de Python (con numpy y scipy).</b> Mandame una captura de esta pantalla."); $("go").disabled = false; return; }
   const INDEX = buena[1].replace("pyodide.js","");
   try {
     let t = performance.now(), li = paso("Descargando Python…");
@@ -61,7 +63,8 @@ $("go").addEventListener("click", async () => {
     const py = await Promise.race([loadPyodide({indexURL: INDEX}), new Promise((_,ko)=>setTimeout(()=>ko(new Error("Python no arrancó en 90 s")),90000))]);
     li.innerHTML = `Python listo <span class="t">${seg(t)}</span>`;
     t = performance.now(); li = paso("Descargando numpy y scipy…");
-    await Promise.race([py.loadPackage(["numpy","scipy"]), new Promise((_,ko)=>setTimeout(()=>ko(new Error("numpy y scipy no bajaron en 180 s")),180000))]);
+    const msgs = []; await Promise.race([py.loadPackage(["numpy","scipy"], {messageCallback: m => msgs.push(m), errorCallback: m => msgs.push("ERROR "+m)}), new Promise((_,ko)=>setTimeout(()=>ko(new Error("numpy y scipy no bajaron en 180 s")),180000))]);
+    if(!py.loadedPackages.numpy || !py.loadedPackages.scipy) throw new Error("No se instalaron numpy y scipy. Mensajes: "+msgs.join(" | "));
     li.innerHTML = `numpy y scipy listos <span class="t">${seg(t)}</span>`;
     py.FS.writeFile("engine.py", ENGINE); py.FS.writeFile("m17.json", DATOS);
     t = performance.now(); li = paso("Corriendo los 4 casos del M17…");
