@@ -270,8 +270,11 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
   </section>
 
   <section class="card" aria-labelledby="h-au">
-    <h2 id="h-au">Autos necesarios por fecha</h2>
-    <div class="small">No se carga: sale de cruzar los asientos de los conductores que pueden ese día con los chicos a llevar. </div>
+    <h2 id="h-au">Cuántos autos hacen falta</h2>
+    <div class="small">No se carga: sale de los asientos de los conductores. Cada auto lleva sus asientos menos uno (el conductor ocupa un lugar), y se usan primero los autos más grandes.</div>
+    <div class="tablewrap"><table id="tabla-rangos"></table></div>
+    <div class="small" id="rangos-nota"></div>
+    <h3 style="font-size:14px;font-weight:600;margin:6px 0 0">En cada fecha, con quienes pueden ese día</h3>
     <div class="tablewrap"><table id="tabla-autos"></table></div>
     <div class="small" id="pl-nota"></div>
     <div class="row">
@@ -703,8 +706,14 @@ function dibujarPaso4(){
   const fs = fechasJuego();
   const filas = fs.map(r => { const disp = S2.drivers.filter(d=>!noPuede(d.id,r.iso)), as = disp.map(d=>d.asientos);
     const a = autosNec(S4.max, as); return {r, disp, a}; });
-  $("tabla-autos").innerHTML = `<thead><tr><th>Fecha</th><th class="c">Autos que pueden</th><th class="c">Autos necesarios</th><th>Estado</th></tr></thead><tbody>${filas.map(f=>
-    `<tr><td class="date">${fmt(f.r.iso)} <span class="pill ${f.r.cond}">${f.r.cond}</span></td><td class="num">${f.disp.length}</td><td class="num">${f.a.autos}</td><td><span class="est ${f.a.alcanza?"ok":"no"}">${f.a.alcanza?"Alcanza":"No alcanza"}</span></td></tr>`).join("")}</tbody>`;
+  // por cantidad de chicos: hasta cuántos chicos se llevan con 1, 2, 3… autos (todos los conductores disponibles)
+  const caps = S2.drivers.map(d=>d.asientos-1).sort((x,y)=>y-x); let acum = 0, ant = 0;
+  const rangos = caps.map((c,k) => { acum += c; const fila = {autos:k+1, desde:ant+1, hasta:acum}; ant = acum; return fila; });
+  $("tabla-rangos").innerHTML = `<thead><tr><th>Chicos a llevar</th><th class="c">Autos necesarios</th></tr></thead><tbody>${rangos.map(g =>
+    `<tr${S4.max>=g.desde && S4.max<=g.hasta ? ' style="background:var(--accent-soft)"' : ""}><td class="date">${g.desde===g.hasta?g.desde:`${g.desde} a ${g.hasta}`}</td><td class="num">${g.autos} ${g.autos===1?"auto":"autos"}</td></tr>`).join("")}</tbody>`;
+  $("rangos-nota").textContent = S4.max > acum ? `Con ${S4.max} chicos no alcanzan ni siquiera todos los autos juntos (llevan ${acum}).` : `Con ${S4.max} chicos hacen falta ${autosNec(S4.max, S2.drivers.map(d=>d.asientos)).autos} ${autosNec(S4.max, S2.drivers.map(d=>d.asientos)).autos===1?"auto":"autos"} cuando están todos los conductores.`;
+  $("tabla-autos").innerHTML = `<thead><tr><th>Fecha</th><th class="c">Autos necesarios</th><th>Estado</th></tr></thead><tbody>${filas.map(f =>
+    `<tr><td class="date">${fmt(f.r.iso)} <span class="pill ${f.r.cond}">${f.r.cond}</span></td><td class="num">${f.a.autos}</td><td><span class="est ${f.a.alcanza?"ok":"no"}">${f.a.alcanza?"Alcanza":"No alcanza"}</span></td></tr>`).join("")}</tbody>`;
   const multi = filas.some(f=>f.a.autos>1), falta = filas.filter(f=>!f.a.alcanza);
   $("pl-nota").textContent = falta.length ? `En ${falta.length} fecha(s) no alcanzan los autos disponibles: hay que sumar un conductor o liberar a alguien.`
     : multi ? "Hay fechas con más de un auto: la optimización va a repartir también entre autos de la misma fecha." : "Con un solo auto por fecha alcanza para todo el plantel.";
