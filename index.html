@@ -153,6 +153,12 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
     <ul class="steps" aria-hidden="true" id="barra"><li class="on"></li><li></li><li></li><li></li><li></li><li></li><li></li></ul>
     <div class="steplabel" id="steplabel"></div>
     <h1 id="titulo-paso"></h1>
+    <div class="row" id="barra-archivo">
+      <button type="button" id="b-guardar">Guardar copia</button>
+      <button type="button" id="b-abrir">Abrir copia</button>
+      <input type="file" id="f-abrir" accept=".json,application/json" hidden>
+    </div>
+    <div class="small" id="msg-archivo" role="status"></div>
   </header>
 
   <div id="paso1" class="wrap" style="padding:0">
@@ -891,10 +897,59 @@ $("res-detalle").addEventListener("change", e => { if(e.target.id==="sel-base"){
 $("b-elegir").addEventListener("click", () => { S7.elegida = S7.activa; dibujarPaso7(); });
 $("b-volver7").addEventListener("click", () => irPaso(6));
 
+
+/* ===== Guardar y abrir una copia del trabajo (archivo .json) ===== */
+const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-extra","r-extra-a","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","p-dpm","p-dpm-km","r-base","r-base-v","r-base-tol"];
+let pasoActual = 1;
+function instantanea(){
+  const ctl = {}; CTRL6.forEach(id => { const e = $(id); ctl[id] = e.type==="checkbox" ? e.checked : e.value; });
+  return { app:"pool-losmo", formato:1, guardado:new Date().toISOString(), paso:pasoActual,
+    fixture:{ club:S.club, divIdx:S.divIdx, nombre:S.nombre, cat:DATA.divs[S.divIdx].cat, rows:S.rows, confirmado:S.confirmado },
+    conductores:S2.drivers, noPuede:[...S3.no], decisiones:S3.dec,
+    plantel:{max:S4.max}, distancias:{centro:S5.centro, km:S5.km},
+    reglas:ctl, propias:S6.propias,
+    versiones:S7.versiones, activa:S7.activa, elegida:S7.elegida };
+}
+function restaurar(o){
+  if(!o || o.app!=="pool-losmo") throw new Error("Este archivo no es una copia de Pool LosMo.");
+  S.club = o.fixture.club; iniciarClub(); llenarCat(o.fixture.cat);
+  $("eq").value = o.fixture.divIdx+"|"+o.fixture.nombre; cargarEquipo();
+  S.rows = o.fixture.rows; S.confirmado = !!o.fixture.confirmado; render();
+  S2.drivers = o.conductores; uid = Math.max(uid, ...S2.drivers.map(d=>d.id)); S2.ejemplo = false; S2.confirmado = false;
+  S3.no = new Set(o.noPuede); S3.dec = o.decisiones || {}; S3.sembrado = true; S3.ejemplo = false; S3.confirmado = false;
+  S4.max = o.plantel.max; S4.ejemplo = false; S4.confirmado = false;
+  S5.centro = o.distancias.centro; S5.km = o.distancias.km; S5.sembrado = true; S5.ejemplo = false; S5.confirmado = false;
+  S6.propias = o.propias || [];
+  S7.versiones = o.versiones || []; S7.activa = o.activa; S7.elegida = o.elegida;
+  S7.base = (() => { const i = S7.versiones.findIndex(x=>x.id===S7.activa); return i>0 ? S7.versiones[i-1].id : null; })();
+  actualizarPaso6();                                  // arma las listas (conductores, versiones) antes de poner los valores
+  Object.entries(o.reglas||{}).forEach(([id,v]) => { const e = $(id); if(!e) return; if(e.type==="checkbox") e.checked = v; else e.value = v; });
+  actualizarPaso6();
+  irPaso(Math.min(Math.max(o.paso||1,1), 7));
+}
+function msgArchivo(t){ $("msg-archivo").textContent = t; }
+$("b-guardar").addEventListener("click", () => {
+  try {
+    const blob = new Blob([JSON.stringify(instantanea())], {type:"application/json"});
+    const a = document.createElement("a"), nombre = (S.nombre||"pool").toLowerCase().replace(/[^a-z0-9]+/g,"-");
+    a.href = URL.createObjectURL(blob); a.download = `pool-losmo-${nombre}.json`; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+    msgArchivo("Copia guardada. Tiene datos de contacto de las familias: guardala en tu Drive o en tu celular, no la subas a sitios públicos.");
+  } catch(e){ msgArchivo("No se pudo guardar: "+e.message); }
+});
+$("b-abrir").addEventListener("click", () => $("f-abrir").click());
+$("f-abrir").addEventListener("change", async e => {
+  const f = e.target.files[0]; if(!f) return;
+  try { restaurar(JSON.parse(await f.text())); msgArchivo(`Copia abierta: ${f.name}.`); }
+  catch(err){ msgArchivo("No se pudo abrir: "+err.message); }
+  e.target.value = "";
+});
+
 /* ===== Navegación entre pasos ===== */
 const PASOS = ["Fixture","Conductores y autos","Fechas no disponibles","Plantel","Distancias","Reglas","Resultado"];
 const TITULOS = ["Confirmá el fixture del equipo","Cargá los conductores y sus autos","Indicá cuándo no puede cada conductor","Cuántos chicos hay que llevar","Distancias a cada cancha","Elegí las reglas","Resultado de la optimización"];
 function irPaso(n){
+  pasoActual = n;
   for(let i=1;i<=7;i++) $("paso"+i).style.display = i===n ? "" : "none";
   [...$("barra").children].forEach((li,i)=>li.className = i<n ? "on" : "");
   $("steplabel").innerHTML = `Paso ${n} de 7 · <b>${PASOS[n-1]}</b> <span class="small">${n<7?"(sigue: "+PASOS[n].toLowerCase()+")":""}</span>`;
