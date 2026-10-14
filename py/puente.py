@@ -21,3 +21,10 @@ def correr(texto):
         return json.dumps({"error": "sin_solucion"})
     res["resumen"] = versiones.bullets(res, d.get("base_id"))
     return json.dumps(res)
+
+
+def leer_fixture(texto):
+    """Recibe {"archivo":..., "paginas":[texto de cada página]} y devuelve los datos del fixture."""
+    import fixture_datos
+    d = json.loads(texto)
+    return json.dumps(fixture_datos.desde_paginas(d["paginas"], d["archivo"]), ensure_ascii=False)
