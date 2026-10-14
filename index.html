@@ -158,6 +158,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
       <button type="button" id="b-drive-guardar">Guardar en Drive</button>
       <button type="button" id="b-drive-abrir">Abrir de Drive</button>
     </div>
+    <div class="small" id="drive-estado" aria-live="polite"></div>
     <details class="opc">
       <summary>Más opciones de guardado</summary>
       <div style="display:flex;flex-direction:column;gap:10px;padding-top:8px">
@@ -1000,8 +1001,8 @@ async function guardarDrive(){
     const r = await drive("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {method:"POST", headers:{"Content-Type":`multipart/related; boundary=${b}`}, body});
     id = (await r.json()).id;
   }
-  DRIVE.id = id; DRIVE.nombre = nombre;
-  msgArchivo(`Guardado en tu Drive como «${nombre}».`);
+  DRIVE.id = id; DRIVE.nombre = nombre; DRIVE.hora = new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
+  estadoDrive(); msgArchivo("Guardado en tu Drive.");
 }
 async function listarDrive(){
   msgArchivo("Buscando en tu Drive…");
@@ -1009,15 +1010,26 @@ async function listarDrive(){
   const j = await r.json(), box = $("drive-lista");
   if(!j.files.length){ box.style.display = "none"; msgArchivo("No hay trabajos guardados todavía. Guardá uno con «Guardar en Drive»."); return; }
   box.style.display = ""; msgArchivo("Elegí cuál abrir:");
-  box.innerHTML = j.files.map(f => `<li><button type="button" data-fid="${esc(f.id)}" data-fn="${esc(f.name)}">${esc(f.name.replace(/\.json$/i,""))}</button><span class="small">${new Date(f.modifiedTime).toLocaleDateString("es-AR")}</span></li>`).join("");
+  box.innerHTML = j.files.map(f => `<li><button type="button" data-fid="${esc(f.id)}" data-fn="${esc(f.name)}">${esc(f.name.replace(/\.json$/i,""))}</button><span class="small">${new Date(f.modifiedTime).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></li>`).join("");
 }
 async function abrirDrive(id, nombre){
   msgArchivo("Abriendo…");
   const r = await drive(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`);
   const o = JSON.parse(await r.text()); restaurar(o);
-  DRIVE.id = id; DRIVE.nombre = nombre; $("drive-nombre").value = o.driveNombre || ""; $("drive-lista").style.display = "none";
-  msgArchivo(`Abierto desde tu Drive: «${nombre.replace(/\.json$/i,"")}».`);
+  DRIVE.id = id; DRIVE.nombre = nombre; DRIVE.hora = null; $("drive-nombre").value = nombre.replace(/\.json$/i,""); $("drive-lista").style.display = "none";
+  estadoDrive(); msgArchivo("Trabajo abierto desde tu Drive.");
 }
+
+function estadoDrive(){
+  const n = nombreDrive(), e = $("drive-estado"); if(!e) return;
+  const nombre = esc(n.replace(/\.json$/i,""));
+  if(DRIVE.id && DRIVE.nombre===n){
+    e.innerHTML = `Archivo en tu Drive (Mi unidad): <b>${nombre}</b>${DRIVE.hora?` · guardado a las ${DRIVE.hora}`:""} · <a href="https://drive.google.com/file/d/${encodeURIComponent(DRIVE.id)}/view" target="_blank" rel="noopener">Ver en Drive</a>`;
+  } else {
+    e.innerHTML = `Todavía no guardado. Se va a guardar en tu Drive (Mi unidad) como: <b>${nombre}</b>`;
+  }
+}
+$("drive-nombre").addEventListener("input", estadoDrive);
 const conMsg = f => async (...a) => { try { await f(...a); } catch(e){ msgArchivo("No se pudo: "+e.message); } };
 $("b-drive-guardar").addEventListener("click", conMsg(guardarDrive));
 $("b-drive-abrir").addEventListener("click", conMsg(listarDrive));
@@ -1027,7 +1039,7 @@ $("drive-lista").addEventListener("click", conMsg(async e => { const b = e.targe
 const PASOS = ["Fixture","Conductores y autos","Fechas no disponibles","Plantel","Distancias","Reglas","Resultado"];
 const TITULOS = ["Confirmá el fixture del equipo","Cargá los conductores y sus autos","Indicá cuándo no puede cada conductor","Cuántos chicos hay que llevar","Distancias a cada cancha","Elegí las reglas","Resultado de la optimización"];
 function irPaso(n){
-  pasoActual = n;
+  pasoActual = n; if(typeof estadoDrive==="function") estadoDrive();
   for(let i=1;i<=7;i++) $("paso"+i).style.display = i===n ? "" : "none";
   [...$("barra").children].forEach((li,i)=>li.className = i<n ? "on" : "");
   $("steplabel").innerHTML = `Paso ${n} de 7 · <b>${PASOS[n-1]}</b> <span class="small">${n<7?"(sigue: "+PASOS[n].toLowerCase()+")":""}</span>`;
