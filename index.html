@@ -290,9 +290,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
   <div id="paso4" class="wrap" style="display:none;padding:0">
   <section class="card" aria-labelledby="h-pl">
     <h2 id="h-pl">Plantel a transportar <span class="badge" id="badge-ej4">ejemplo M17</span></h2>
-    <div class="small">Cuántos chicos como máximo hay que llevar en cada partido; con eso y los asientos de cada auto se calculan los autos necesarios. La cuenta incluye a los chicos cuyos padres no tienen auto, y se hace sobre el plantel completo, sin descontar bajas de último momento. También podés subir un Excel, Word o PDF.</div>
-    <div class="row"><button type="button" id="b-subir4">Subir Excel, Word o PDF</button></div>
-    <div class="alert info" id="aviso-proto4" hidden>En esta versión de prueba la carga de archivos todavía no está programada. Cambiá los números a mano.</div>
+    <div class="small">Cuántos chicos como máximo hay que llevar en cada partido; con eso y los asientos de cada auto se calculan los autos necesarios. La cuenta incluye a los chicos cuyos padres no tienen auto, y se hace sobre el plantel completo, sin descontar bajas de último momento.</div>
     <div class="nums">
       <div class="num-in"><label for="pl-max">Chicos a transportar por fecha (máximo)</label>
         <div class="stepper"><button type="button" data-pl="max-" aria-label="Menos">−</button><input type="text" inputmode="numeric" id="pl-max" size="3" style="text-align:center;font-family:var(--font-data);width:64px"><button type="button" data-pl="max+" aria-label="Más">+</button></div></div>
@@ -786,7 +784,6 @@ function cambioPl(){ S4.ejemplo=false; S4.confirmado=false; $("ok4").hidden=true
 document.addEventListener("click", e => { const b = e.target.closest("[data-pl]"); if(!b) return; const [k,s] = [b.dataset.pl.slice(0,3), b.dataset.pl.slice(3)];
   S4[k] = Math.max(1, Math.min(40, S4[k] + (s==="+"?1:-1))); cambioPl(); });
 $("pl-max").addEventListener("change", e => { const v = parseInt(e.target.value,10); if(v>0) S4.max = Math.min(40,v); cambioPl(); });
-$("b-subir4").addEventListener("click", () => { $("aviso-proto4").hidden = false; });
 $("b-volver4").addEventListener("click", () => irPaso(3));
 $("b-confirmar4").addEventListener("click", () => { S4.confirmado = true; dibujarPaso4();
   $("ok4").hidden = false; irPaso(5); });
