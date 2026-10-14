@@ -186,7 +186,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
       <input type="file" id="f-fixture" accept=".pdf,application/pdf,.xls,.xlsx" hidden>
       <button type="button" id="b-manual">Cargar a mano</button>
     </div>
-    <div class="alert info" id="aviso-proto" hidden>El ingreso manual del fixture y la lectura de Excel se programan en el paso siguiente. Por ahora podés subir el PDF de la URBA.</div>
+    <div class="alert info" id="aviso-proto" hidden></div>
     <div class="small" id="msg-fixture" role="status"></div>
   </section>
 
@@ -560,8 +560,20 @@ $("b-subir").addEventListener("click", () => $("f-fixture").click());
 $("f-fixture").addEventListener("change", async e => {
   const f = e.target.files[0]; e.target.value = ""; if(!f) return;
   const m = t => { $("msg-fixture").textContent = t; };
-  if(!/\.pdf$/i.test(f.name)){ $("aviso-proto").hidden = false; m("Por ahora solo se lee PDF."); return; }
   $("aviso-proto").hidden = true;
+  if(/\.xlsx$/i.test(f.name)){
+    try {
+      m("Leyendo el Excel…");
+      for(const src of ["vendor/jszip.min.js","vendor/lector_xlsx.js"]) if(!document.querySelector(`script[data-v="${src}"]`)) await new Promise((ok,ko)=>{ const sc=document.createElement("script"); sc.dataset.v=src; sc.src=src; sc.onload=ok; sc.onerror=()=>ko(new Error("Falta "+src+" (solo anda en la versión publicada).")); document.head.appendChild(sc); });
+      const anio = +(S.rows[0] ? S.rows[0].iso.slice(0,4) : 2026);
+      const r = await LectorXLSX.leerXlsx(new Uint8Array(await f.arrayBuffer()), anio);
+      if(!r.rows.length){ m("No encontré partidos en ese Excel. "+r.avisos.join(" ")); return; }
+      S.rows = r.rows; S.editar = false; S.confirmado = false; S.archivoExcel = f.name; render();
+      m(`Listo: leí ${r.rows.length} filas de ${f.name} y las puse como partidos de ${S.nombre}. Revisalas antes de confirmar.` + (r.avisos.length ? " Avisos: "+r.avisos.join(" ") : ""));
+    } catch(err){ m("No se pudo leer el Excel: "+err.message); }
+    return;
+  }
+  if(!/\.pdf$/i.test(f.name)){ m("Solo se leen archivos PDF o Excel (.xlsx)."); return; }
   try {
     m("Leyendo el PDF…");
     const pdfjs = await import(new URL("vendor/pdf.min.mjs", location.href).href);
@@ -578,7 +590,7 @@ $("f-fixture").addEventListener("change", async e => {
     m(`Listo: leí ${nuevo.total} divisiones de ${f.name}.`);
   } catch(err){ m("No se pudo leer el PDF: "+err.message); }
 });
-$("b-manual").addEventListener("click", () => { $("aviso-proto").hidden = false; });
+$("b-manual").addEventListener("click", () => { S.rows = []; S.editar = true; S.confirmado = false; render(); $("b-agregar").click(); $("msg-fixture").textContent = "Cargá los partidos uno por uno con \"Agregar partido\"."; });
 $("b-confirmar").addEventListener("click", () => { S.confirmado = true; render(); $("ok").scrollIntoView({block:"nearest"}); });
 $("tbody").addEventListener("change", e => { const t = e.target, i = t.dataset.i; if(i===undefined) return;
   const k = t.dataset.k; S.rows[+i][k] = k==="n" ? (parseInt(t.value,10)||S.rows[+i].n) : t.value; S.confirmado = false; render(); });
