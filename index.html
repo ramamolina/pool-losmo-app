@@ -655,7 +655,7 @@ function dibujarLista(){
       </div>
       <div class="msg" role="status"></div>
       <div class="fila">
-        <div class="field"><label>Asientos del auto</label>
+        <div class="field"><label>Asientos del auto (conductor incluido)</label>
           <div class="stepper"><button type="button" data-menos="${d.id}" aria-label="Menos asientos">−</button><output>${d.asientos} asientos</output><button type="button" data-mas="${d.id}" aria-label="Más asientos">+</button></div>
           <div class="cap">${textoAsientos(d.asientos)}</div></div>
         <label>Celular<input type="tel" data-k="tel" value="${esc(d.tel)}" autocomplete="off" placeholder="11 5555 1234"></label>
@@ -1096,7 +1096,7 @@ async function leerExcel(f, lector){
 function vista(titulo, html, textoOk, alOk){ // ventana de vista previa: se confirma antes de cargar
   $("vista-t").textContent = titulo; $("vista-cuerpo").innerHTML = html;
   const si = $("vista-si"); si.textContent = textoOk || "Cargar"; si.disabled = !alOk;
-  si.onclick = () => { $("vista").close(); alOk && alOk(); };
+  si.onclick = () => { if(alOk) alOk(); $("vista").close(); };
   $("vista-no").onclick = () => $("vista").close();
   $("vista").showModal();
 }
@@ -1116,15 +1116,16 @@ function previaConductores(r, nombreArchivo, avisoId){
   if(!r.drivers.length){ msgPaso(avisoId, "No encontré conductores en ese Excel. "+r.avisos.join(" ")); return; }
   const juego = new Set(fechasJuego().map(x=>x.iso));
   const tabla = unidad => `<table><thead><tr><th>Iniciales</th><th>Nombre</th><th>Asientos</th><th>No puede (fechas de partido)</th></tr></thead><tbody>${r.drivers.map(d => {
-    const as = unidad==="pasajeros" ? d.cap+1 : d.cap, af = d.no.filter(f=>juego.has(f));
+    const as = !unidad ? `${d.cap} (¿incluye al conductor?)` : unidad==="pasajeros" ? d.cap+1 : d.cap, af = d.no.filter(f=>juego.has(f));
     return `<tr><td><b>${esc(d.ini||"—")}</b></td><td>${esc(d.nombre)}</td><td>${as}</td><td>${af.length ? af.map(fmt).join(", ") : (d.no.length ? "ninguna cae en un partido" : "—")}</td></tr>`; }).join("")}</tbody></table>`;
   vista("Conductores de "+nombreArchivo,
     `<div class="small">Revisá que se haya leído bien antes de cargar. Reemplaza la lista de conductores y las fechas en que no pueden.</div>
      <label class="small" style="display:block;margin:8px 0">La capacidad del Excel cuenta
-       <select id="v-unidad"><option value="pasajeros"${r.unidad==="pasajeros"?" selected":""}>solo los pasajeros (el conductor se suma)</option><option value="asientos"${r.unidad==="asientos"?" selected":""}>todos los asientos, conductor incluido</option></select></label>
-     <div id="v-tabla">${tabla(r.unidad)}</div>${listaAvisos(r.avisos)}`,
+       <select id="v-unidad"><option value="">Elegí una opción…</option><option value="pasajeros">solo los pasajeros (el conductor se suma)</option><option value="asientos">todos los asientos, conductor incluido</option></select></label>
+     <div class="small">${r.unidad==="pasajeros" ? "El título de la columna dice «pasajeros», pero conviene confirmarlo." : "El título de la columna no aclara si cuenta al conductor."}</div>
+     <div id="v-tabla">${tabla("")}</div>${listaAvisos(r.avisos)}`,
     `Cargar ${r.drivers.length} conductores`, () => {
-      const unidad = $("v-unidad").value;
+      const unidad = $("v-unidad").value; if(!unidad) return;
       S2.drivers = r.drivers.map(d => ({id:++uid, nombre:d.nombre, ini:d.ini, manual:!!d.ini, asientos:unidad==="pasajeros"?d.cap+1:d.cap, tel:d.tel, mail:d.mail}));
       S2.drivers.forEach(d => { if(!d.ini && d.nombre) d.ini = genInic(d.nombre, tomadasPor(d.id)); });
       S3.no = new Set(); S3.dec = {}; S3.sembrado = true; S3.ejemplo = false;
@@ -1133,7 +1134,8 @@ function previaConductores(r, nombreArchivo, avisoId){
       msgPaso("aviso-proto2", ""); msgPaso("aviso-proto3", "");
       dibujarLista(); if(pasoActual===3) dibujarPaso3();
     });
-  $("v-unidad").addEventListener("change", e => { $("v-tabla").innerHTML = tabla(e.target.value); });
+  $("vista-si").disabled = true;
+  $("v-unidad").addEventListener("change", e => { $("v-tabla").innerHTML = tabla(e.target.value); $("vista-si").disabled = !e.target.value; });
 }
 pedirArchivo("f-cond", "aviso-proto2", "leerConductores", (r,n) => previaConductores(r,n,"aviso-proto2"));
 $("b-subir2").addEventListener("click", () => $("f-cond").click());
