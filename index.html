@@ -158,6 +158,12 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
       <button type="button" id="b-abrir">Abrir copia</button>
       <input type="file" id="f-abrir" accept=".json,application/json" hidden>
     </div>
+    <div class="row" id="barra-drive">
+      <button type="button" id="b-drive-guardar">Guardar en Drive</button>
+      <button type="button" id="b-drive-abrir">Abrir de Drive</button>
+    </div>
+    <label for="drive-nombre" class="small">Nombre del archivo en Drive<input type="text" id="drive-nombre" autocomplete="off" placeholder="Pool LosMo - M17 Los Molinos A"></label>
+    <div id="drive-lista" class="propias" style="display:none"></div>
     <div class="small" id="msg-archivo" role="status"></div>
   </header>
 
@@ -944,6 +950,72 @@ $("f-abrir").addEventListener("change", async e => {
   catch(err){ msgArchivo("No se pudo abrir: "+err.message); }
   e.target.value = "";
 });
+
+
+/* ===== Google Drive (solo ve los archivos que crea esta app) ===== */
+const DRIVE = { cid:"465690255059-hc26i6gs8s2cvpnaet2o3ilipnjb6d6o.apps.googleusercontent.com",
+  scope:"https://www.googleapis.com/auth/drive.file", tok:null, exp:0, id:null, nombre:null };
+(function(){ const s = document.createElement("script"); s.src = "https://accounts.google.com/gsi/client"; s.async = true; document.head.appendChild(s); })();
+function tokenDrive(){
+  return new Promise((ok,ko) => {
+    if(DRIVE.tok && Date.now() < DRIVE.exp-60000) return ok(DRIVE.tok);
+    if(!window.google || !google.accounts || !google.accounts.oauth2) return ko(new Error("Todavía no cargó el acceso de Google. Esperá unos segundos y probá de nuevo."));
+    const c = google.accounts.oauth2.initTokenClient({ client_id:DRIVE.cid, scope:DRIVE.scope,
+      callback: r => { if(r.error) return ko(new Error(r.error_description || r.error)); DRIVE.tok = r.access_token; DRIVE.exp = Date.now() + (+r.expires_in)*1000; ok(DRIVE.tok); },
+      error_callback: e => ko(new Error(e && e.type==="popup_closed" ? "Cerraste la ventana de Google." : ((e && e.type) || "No se pudo entrar con Google."))) });
+    c.requestAccessToken();
+  });
+}
+async function drive(url, opts={}){
+  const t = await tokenDrive();
+  const r = await fetch(url, {...opts, headers:{Authorization:"Bearer "+t, ...(opts.headers||{})}});
+  if(!r.ok){ let m = ""; try { m = (await r.json()).error.message; } catch(e){}
+    throw new Error(`Drive respondió ${r.status}${m ? ": "+m : ""}${r.status===403 ? " (revisá que Google Drive API esté activada en el proyecto de Google Cloud)" : ""}`); }
+  return r;
+}
+function nombreDrive(){
+  const base = $("drive-nombre").value.trim() || `Pool LosMo - M${DATA.divs[S.divIdx].cat} ${S.nombre}`;
+  return /\.json$/i.test(base) ? base : base + ".json";
+}
+const qs = s => String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+async function guardarDrive(){
+  const nombre = nombreDrive(), cuerpo = JSON.stringify({...instantanea(), driveNombre:$("drive-nombre").value.trim()});
+  msgArchivo("Guardando en tu Drive…");
+  let id = (DRIVE.id && DRIVE.nombre===nombre) ? DRIVE.id : null;
+  if(!id){
+    const r = await drive(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${qs(nombre)}' and trashed=false`)}&fields=files(id,name)&pageSize=1`);
+    const j = await r.json(); if(j.files && j.files.length) id = j.files[0].id;
+  }
+  if(id){
+    await drive(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:cuerpo});
+  } else {
+    const b = "poollosmo"+Date.now();
+    const body = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({name:nombre, mimeType:"application/json"})}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${cuerpo}\r\n--${b}--`;
+    const r = await drive("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {method:"POST", headers:{"Content-Type":`multipart/related; boundary=${b}`}, body});
+    id = (await r.json()).id;
+  }
+  DRIVE.id = id; DRIVE.nombre = nombre;
+  msgArchivo(`Guardado en tu Drive como «${nombre}».`);
+}
+async function listarDrive(){
+  msgArchivo("Buscando en tu Drive…");
+  const r = await drive(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name contains 'Pool LosMo' and trashed=false")}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=30`);
+  const j = await r.json(), box = $("drive-lista");
+  if(!j.files.length){ box.style.display = "none"; msgArchivo("No hay trabajos guardados todavía. Guardá uno con «Guardar en Drive»."); return; }
+  box.style.display = ""; msgArchivo("Elegí cuál abrir:");
+  box.innerHTML = j.files.map(f => `<li><button type="button" data-fid="${esc(f.id)}" data-fn="${esc(f.name)}">${esc(f.name.replace(/\.json$/i,""))}</button><span class="small">${new Date(f.modifiedTime).toLocaleDateString("es-AR")}</span></li>`).join("");
+}
+async function abrirDrive(id, nombre){
+  msgArchivo("Abriendo…");
+  const r = await drive(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`);
+  const o = JSON.parse(await r.text()); restaurar(o);
+  DRIVE.id = id; DRIVE.nombre = nombre; $("drive-nombre").value = o.driveNombre || ""; $("drive-lista").style.display = "none";
+  msgArchivo(`Abierto desde tu Drive: «${nombre.replace(/\.json$/i,"")}».`);
+}
+const conMsg = f => async (...a) => { try { await f(...a); } catch(e){ msgArchivo("No se pudo: "+e.message); } };
+$("b-drive-guardar").addEventListener("click", conMsg(guardarDrive));
+$("b-drive-abrir").addEventListener("click", conMsg(listarDrive));
+$("drive-lista").addEventListener("click", conMsg(async e => { const b = e.target.closest("[data-fid]"); if(b) await abrirDrive(b.dataset.fid, b.dataset.fn); }));
 
 /* ===== Navegación entre pasos ===== */
 const PASOS = ["Fixture","Conductores y autos","Fechas no disponibles","Plantel","Distancias","Reglas","Resultado"];
