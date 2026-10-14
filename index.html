@@ -985,39 +985,47 @@ function nombreDrive(){
   return /\.json$/i.test(base) ? base : base + ".json";
 }
 const qs = s => String(s).replace(/\\/g,"\\\\").replace(/'/g,"\\'");
+function resumenDe(o){
+  const f = o.fixture, n = f.rows.filter(r => r.cond!=="B").length, v = (o.versiones||[]).length;
+  const partes = [`M${f.cat} ${f.nombre}`, `${n} partidos`, `${o.conductores.length} conductores`, `${o.plantel.max} chicos`];
+  partes.push(v ? `${v} ${v===1?"versión":"versiones"}${o.elegida?` (elegida ${o.elegida})`:""}` : "sin optimizar todavía");
+  return partes.join(" · ");
+}
 async function guardarDrive(){
-  const nombre = nombreDrive(), cuerpo = JSON.stringify({...instantanea(), driveNombre:$("drive-nombre").value.trim()});
+  const nombre = nombreDrive(), inst = {...instantanea(), driveNombre:$("drive-nombre").value.trim()}, cuerpo = JSON.stringify(inst);
+  const meta = JSON.stringify({name:nombre, mimeType:"application/json", description:resumenDe(inst)});
+  const multi = () => { const b = "poollosmo"+Date.now();
+    return {b, body:`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${cuerpo}\r\n--${b}--`}; };
   msgArchivo("Guardando en tu Drive…");
   let id = (DRIVE.id && DRIVE.nombre===nombre) ? DRIVE.id : null;
   if(!id){
     const r = await drive(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='${qs(nombre)}' and trashed=false`)}&fields=files(id,name)&pageSize=1`);
     const j = await r.json(); if(j.files && j.files.length) id = j.files[0].id;
   }
+  const m = multi();
   if(id){
-    await drive(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`, {method:"PATCH", headers:{"Content-Type":"application/json"}, body:cuerpo});
+    await drive(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=multipart`, {method:"PATCH", headers:{"Content-Type":`multipart/related; boundary=${m.b}`}, body:m.body});
   } else {
-    const b = "poollosmo"+Date.now();
-    const body = `--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({name:nombre, mimeType:"application/json"})}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${cuerpo}\r\n--${b}--`;
-    const r = await drive("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {method:"POST", headers:{"Content-Type":`multipart/related; boundary=${b}`}, body});
+    const r = await drive("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {method:"POST", headers:{"Content-Type":`multipart/related; boundary=${m.b}`}, body:m.body});
     id = (await r.json()).id;
   }
   DRIVE.id = id; DRIVE.nombre = nombre; DRIVE.hora = new Date().toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
-  estadoDrive(); msgArchivo("Guardado en tu Drive.");
+  estadoDrive(); msgArchivo("Guardado en tu Drive: "+resumenDe(inst)+".");
 }
 async function listarDrive(){
   msgArchivo("Buscando en tu Drive…");
-  const r = await drive(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name contains 'Pool LosMo' and trashed=false")}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=30`);
+  const r = await drive(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name contains 'Pool LosMo' and trashed=false")}&fields=files(id,name,modifiedTime,description)&orderBy=modifiedTime desc&pageSize=30`);
   const j = await r.json(), box = $("drive-lista");
   if(!j.files.length){ box.style.display = "none"; msgArchivo("No hay trabajos guardados todavía. Guardá uno con «Guardar en Drive»."); return; }
   box.style.display = ""; msgArchivo("Elegí cuál abrir:");
-  box.innerHTML = j.files.map(f => `<li><button type="button" data-fid="${esc(f.id)}" data-fn="${esc(f.name)}">${esc(f.name.replace(/\.json$/i,""))}</button><span class="small">${new Date(f.modifiedTime).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span></li>`).join("");
+  box.innerHTML = j.files.map(f => `<li style="flex-wrap:wrap"><button type="button" data-fid="${esc(f.id)}" data-fn="${esc(f.name)}">${esc(f.name.replace(/\.json$/i,""))}</button><span class="small">${new Date(f.modifiedTime).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>${f.description?`<div class="small" style="flex-basis:100%">${esc(f.description)}</div>`:""}</li>`).join("");
 }
 async function abrirDrive(id, nombre){
   msgArchivo("Abriendo…");
   const r = await drive(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(id)}?alt=media`);
   const o = JSON.parse(await r.text()); restaurar(o);
   DRIVE.id = id; DRIVE.nombre = nombre; DRIVE.hora = null; $("drive-nombre").value = nombre.replace(/\.json$/i,""); $("drive-lista").style.display = "none";
-  estadoDrive(); msgArchivo("Trabajo abierto desde tu Drive.");
+  estadoDrive(); msgArchivo("Trabajo abierto: "+resumenDe(o)+".");
 }
 
 function estadoDrive(){
