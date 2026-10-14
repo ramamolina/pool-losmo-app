@@ -72,6 +72,12 @@ select,input[type=text],input[type=date],input[type=tel]{width:100%;min-height:4
 .tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
 table{border-collapse:collapse;width:100%}
 table.edit{min-width:600px}
+dialog#vista{border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);width:min(680px,calc(100% - 24px));max-height:88vh;padding:16px;overflow:auto}
+dialog#vista::backdrop{background:rgba(0,0,0,.45)}
+dialog#vista h2{margin:0 0 8px;font-size:18px}
+dialog#vista table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}
+dialog#vista th,dialog#vista td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+dialog#vista .row{margin-top:12px}
 th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);text-align:left;font-weight:500;padding:8px 6px;background:var(--bg);border-bottom:1px solid var(--line)}
 td{padding:9px 6px;border-bottom:1px solid var(--line-soft);vertical-align:middle}
 tr:last-child td{border-bottom:0}
@@ -176,6 +182,8 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
     <div class="small" id="msg-archivo" role="status"></div>
   </header>
 
+  <dialog id="vista" aria-labelledby="vista-t"><h2 id="vista-t"></h2><div id="vista-cuerpo"></div><div class="row"><button type="button" id="vista-no">Cancelar</button><button type="button" class="primary" id="vista-si"></button></div></dialog>
+  <input type="file" id="f-cond" accept=".xlsx" hidden><input type="file" id="f-cond3" accept=".xlsx" hidden><input type="file" id="f-dist" accept=".xlsx" hidden>
   <div id="paso1" class="wrap" style="padding:0">
   <section class="card" aria-labelledby="h-archivo">
     <h2 id="h-archivo">Archivo cargado</h2>
@@ -226,12 +234,12 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
   <div id="paso2" class="wrap" style="display:none;padding:0">
   <section class="card" aria-labelledby="h-arch2">
     <h2 id="h-arch2">Lista de conductores y autos</h2>
-    <div class="small">Subí un Excel, Word o PDF con la lista, o cargá a mano. Con el archivo, la app lee nombre o iniciales, asientos y contacto.</div>
+    <div class="small">Subí un Excel (.xlsx) con la lista, o cargá a mano. La app lee nombre, iniciales, capacidad del auto y, si las trae, las fechas en que no puede. Word y PDF vienen después.</div>
     <div class="row">
       <button type="button" id="b-subir2">Subir Excel, Word o PDF</button>
       <button type="button" id="b-agregar2" class="primary">Agregar conductor</button>
     </div>
-    <div class="alert info" id="aviso-proto2" hidden>En esta versión de prueba la carga de archivos todavía no está programada. Probá el ingreso manual: escribí un nombre y mirá cómo se arman las iniciales.</div>
+    <div class="alert info" id="aviso-proto2" hidden></div>
   </section>
 
   <section class="card" aria-labelledby="h-cond">
@@ -255,7 +263,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
     <h2 id="h-nd">Fechas en que no pueden <span class="badge" id="badge-ej3">ejemplo M17</span></h2>
     <div class="small">Tocá la casilla de cada conductor en las fechas en que no puede hacer pool. No hace falta decir el motivo. También podés subir un Excel, Word o PDF (puede traer la lista de conductores y las fechas juntas).</div>
     <div class="row"><button type="button" id="b-subir3">Subir Excel, Word o PDF</button></div>
-    <div class="alert info" id="aviso-proto3" hidden>En esta versión de prueba la carga de archivos todavía no está programada. Probá tocando las casillas.</div>
+    <div class="alert info" id="aviso-proto3" hidden></div>
     <div class="grid-wrap"><table class="grid" id="grilla"></table></div>
     <div class="small" id="leyenda3"></div>
   </section>
@@ -564,11 +572,9 @@ $("f-fixture").addEventListener("change", async e => {
   if(/\.xlsx$/i.test(f.name)){
     try {
       m("Leyendo el Excel…");
-      for(const src of ["vendor/jszip.min.js","vendor/lector_xlsx.js"]) if(!document.querySelector(`script[data-v="${src}"]`)) await new Promise((ok,ko)=>{ const sc=document.createElement("script"); sc.dataset.v=src; sc.src=src; sc.onload=ok; sc.onerror=()=>ko(new Error("Falta "+src+" (solo anda en la versión publicada).")); document.head.appendChild(sc); });
-      const anio = +(S.rows[0] ? S.rows[0].iso.slice(0,4) : 2026);
-      const r = await LectorXLSX.leerXlsx(new Uint8Array(await f.arrayBuffer()), anio);
+      const r = await leerExcel(f, "leerFixture");
       if(!r.rows.length){ m("No encontré partidos en ese Excel. "+r.avisos.join(" ")); return; }
-      S.rows = r.rows; S.editar = false; S.confirmado = false; S.archivoExcel = f.name; render();
+      S.rows = r.rows; S.editar = false; S.confirmado = false; render();
       m(`Listo: leí ${r.rows.length} filas de ${f.name} y las puse como partidos de ${S.nombre}. Revisalas antes de confirmar.` + (r.avisos.length ? " Avisos: "+r.avisos.join(" ") : ""));
     } catch(err){ m("No se pudo leer el Excel: "+err.message); }
     return;
@@ -689,7 +695,6 @@ $("lista").addEventListener("click", e => {
 });
 $("b-agregar2").addEventListener("click", () => { S2.drivers.push({id:++uid, nombre:"", ini:"", manual:false, asientos:7, tel:"", mail:""}); S2.ejemplo=false; S2.confirmado=false; $("ok2").hidden=true; dibujarLista();
   const ult = document.querySelector("#lista [data-drv]:last-child input"); if(ult){ ult.focus(); ult.scrollIntoView({block:"center"}); } });
-$("b-subir2").addEventListener("click", () => { $("aviso-proto2").hidden = false; });
 $("b-confirmar2").addEventListener("click", () => { S2.confirmado = true; resumen2();
   $("ok2").hidden = false; irPaso(3); });
 
@@ -741,7 +746,6 @@ $("grilla").addEventListener("click", e => { const b = e.target.closest("[data-c
   S3.ejemplo = false; S3.confirmado = false; $("ok3").hidden = true; dibujarPaso3(); });
 $("avisos").addEventListener("click", e => { const b = e.target.closest("[data-dec]"); if(!b) return;
   const p = b.dataset.dec.split("|"), k = p[0]+"|"+p[1]; S3.dec[k] = p[2]; S3.confirmado = false; $("ok3").hidden = true; dibujarPaso3(); });
-$("b-subir3").addEventListener("click", () => { $("aviso-proto3").hidden = false; });
 $("b-volver3").addEventListener("click", () => irPaso(2));
 $("b-confirmar3").addEventListener("click", () => { S3.confirmado = true; dibujarPaso3(); irPaso(4); return;
   const n = S2.drivers.reduce((a,d)=>a+fechasJuego().filter(r=>noPuede(d.id,r.iso)).length,0);
@@ -821,7 +825,7 @@ function cambioKm(){ S5.ejemplo=false; S5.confirmado=false; $("ok5").hidden=true
 $("tabla-km").addEventListener("change", e => { const i = e.target.closest("[data-sede]"); if(!i) return;
   const v = parseFloat(i.value.replace(",",".")); if(v>0) S5.km[i.dataset.sede] = v; else delete S5.km[i.dataset.sede]; cambioKm(); dibujarPaso5(); });
 $("centro").addEventListener("input", e => { S5.centro = e.target.value; S5.ejemplo = false; });
-["b-mapa","b-subir5","b-calc5"].forEach(id => $(id).addEventListener("click", () => { $("aviso-proto5").hidden = false; }));
+["b-mapa","b-calc5"].forEach(id => $(id).addEventListener("click", () => { $("aviso-proto5").hidden = false; }));
 $("b-volver5").addEventListener("click", () => irPaso(4));
 $("b-confirmar5").addEventListener("click", () => { S5.confirmado = true; irPaso(6); });
 
@@ -1081,6 +1085,87 @@ const conMsg = f => async (...a) => { try { await f(...a); } catch(e){ msgArchiv
 $("b-drive-guardar").addEventListener("click", conMsg(guardarDrive));
 $("b-drive-abrir").addEventListener("click", conMsg(listarDrive));
 $("drive-lista").addEventListener("click", conMsg(async e => { const b = e.target.closest("[data-fid]"); if(b) await abrirDrive(b.dataset.fid, b.dataset.fn); }));
+
+/* ===== Subida de Excel: lectura común y vista previa (sirve para cualquier dato) ===== */
+async function cargarScripts(srcs){
+  for(const src of srcs) if(!document.querySelector(`script[data-v="${src}"]`))
+    await new Promise((ok,ko)=>{ const sc=document.createElement("script"); sc.dataset.v=src; sc.src=src; sc.onload=ok; sc.onerror=()=>ko(new Error("Falta "+src+" (solo anda en la versión publicada).")); document.head.appendChild(sc); });
+}
+const anioFixture = () => +(S.rows[0] ? S.rows[0].iso.slice(0,4) : 2026);
+async function leerExcel(f, lector){
+  await cargarScripts(["vendor/jszip.min.js","vendor/lector_tablas.js"]);
+  return LectorTablas[lector](await LectorTablas.abrir(new Uint8Array(await f.arrayBuffer())), anioFixture());
+}
+function vista(titulo, html, textoOk, alOk){ // ventana de vista previa: se confirma antes de cargar
+  $("vista-t").textContent = titulo; $("vista-cuerpo").innerHTML = html;
+  const si = $("vista-si"); si.textContent = textoOk || "Cargar"; si.disabled = !alOk;
+  si.onclick = () => { $("vista").close(); alOk && alOk(); };
+  $("vista-no").onclick = () => $("vista").close();
+  $("vista").showModal();
+}
+const listaAvisos = av => av.length ? `<div class="alert" style="margin-top:8px"><b>Revisá:</b><br>${av.map(esc).join("<br>")}</div>` : "";
+function msgPaso(id, t){ const e = $(id); e.textContent = t; e.hidden = !t; }
+function pedirArchivo(inputId, avisoId, lector, mostrar){
+  $(inputId).addEventListener("change", async e => {
+    const f = e.target.files[0]; e.target.value = ""; if(!f) return;
+    if(!/\.xlsx$/i.test(f.name)){ msgPaso(avisoId, "Por ahora se leen archivos Excel (.xlsx). Word y PDF vienen después."); return; }
+    try { msgPaso(avisoId, ""); mostrar(await leerExcel(f, lector), f.name); }
+    catch(err){ msgPaso(avisoId, "No se pudo leer el Excel: "+err.message); }
+  });
+}
+
+/* conductores + fechas en que no pueden (un solo archivo puede traer las dos cosas) */
+function previaConductores(r, nombreArchivo, avisoId){
+  if(!r.drivers.length){ msgPaso(avisoId, "No encontré conductores en ese Excel. "+r.avisos.join(" ")); return; }
+  const juego = new Set(fechasJuego().map(x=>x.iso));
+  const tabla = unidad => `<table><thead><tr><th>Iniciales</th><th>Nombre</th><th>Asientos</th><th>No puede (fechas de partido)</th></tr></thead><tbody>${r.drivers.map(d => {
+    const as = unidad==="pasajeros" ? d.cap+1 : d.cap, af = d.no.filter(f=>juego.has(f));
+    return `<tr><td><b>${esc(d.ini||"—")}</b></td><td>${esc(d.nombre)}</td><td>${as}</td><td>${af.length ? af.map(fmt).join(", ") : (d.no.length ? "ninguna cae en un partido" : "—")}</td></tr>`; }).join("")}</tbody></table>`;
+  vista("Conductores de "+nombreArchivo,
+    `<div class="small">Revisá que se haya leído bien antes de cargar. Reemplaza la lista de conductores y las fechas en que no pueden.</div>
+     <label class="small" style="display:block;margin:8px 0">La capacidad del Excel cuenta
+       <select id="v-unidad"><option value="pasajeros"${r.unidad==="pasajeros"?" selected":""}>solo los pasajeros (el conductor se suma)</option><option value="asientos"${r.unidad==="asientos"?" selected":""}>todos los asientos, conductor incluido</option></select></label>
+     <div id="v-tabla">${tabla(r.unidad)}</div>${listaAvisos(r.avisos)}`,
+    `Cargar ${r.drivers.length} conductores`, () => {
+      const unidad = $("v-unidad").value;
+      S2.drivers = r.drivers.map(d => ({id:++uid, nombre:d.nombre, ini:d.ini, manual:!!d.ini, asientos:unidad==="pasajeros"?d.cap+1:d.cap, tel:d.tel, mail:d.mail}));
+      S2.drivers.forEach(d => { if(!d.ini && d.nombre) d.ini = genInic(d.nombre, tomadasPor(d.id)); });
+      S3.no = new Set(); S3.dec = {}; S3.sembrado = true; S3.ejemplo = false;
+      r.drivers.forEach((d,i) => d.no.forEach(f => S3.no.add(k3(S2.drivers[i].id, f))));
+      S2.ejemplo = false; S2.confirmado = false; $("ok2").hidden = true;
+      msgPaso("aviso-proto2", ""); msgPaso("aviso-proto3", "");
+      dibujarLista(); if(pasoActual===3) dibujarPaso3();
+    });
+  $("v-unidad").addEventListener("change", e => { $("v-tabla").innerHTML = tabla(e.target.value); });
+}
+pedirArchivo("f-cond", "aviso-proto2", "leerConductores", (r,n) => previaConductores(r,n,"aviso-proto2"));
+$("b-subir2").addEventListener("click", () => $("f-cond").click());
+pedirArchivo("f-cond3", "aviso-proto3", "leerConductores", (r,n) => previaConductores(r,n,"aviso-proto3"));
+$("b-subir3").addEventListener("click", () => $("f-cond3").click());
+
+/* distancias: Excel con fecha, local, visitante y km (ida o ida y vuelta) */
+pedirArchivo("f-dist", "aviso-proto5", "leerDistancias", (r, nombre) => {
+  const aplicar = {}, av = [...r.avisos], usadas = new Set(), filas = [], faltan = [], club = norm(S.club);
+  fechasJuego().forEach(p => {
+    const d = r.rows.find(x => x.iso===p.iso);
+    if(!d){ faltan.push(p); return; }
+    usadas.add(d);
+    const cond = norm(d.local).includes(club) ? "L" : "V";
+    if(cond!==p.cond){ av.push(`${fmt(p.iso)}: en el Excel sos ${cond==="L"?"local":"visitante"} y en el fixture ${p.cond==="L"?"local":"visitante"}. No se carga.`); return; }
+    const k = claveSede(p);
+    if(k in aplicar && aplicar[k]!==d.km) av.push(`${fmt(p.iso)}: ${p.cond==="L"?"cancha propia":p.rival} ya tenía ${fnum(aplicar[k])} km y acá dice ${fnum(d.km)}. Queda el primero.`);
+    else { aplicar[k] = d.km; filas.push({iso:p.iso, cancha: p.cond==="L" ? "Los Molinos (cancha propia)" : p.rival, km:d.km, arch:d.kmArchivo}); }
+  });
+  faltan.filter(p => !(claveSede(p) in aplicar)).forEach(p => av.push(`${fmt(p.iso)} (${p.cond==="L"?"local":"vs "+p.rival}): el Excel no trae esa fecha.`));
+  const sobran = r.rows.filter(x => !usadas.has(x));
+  if(sobran.length) av.push(`El Excel trae ${sobran.length} fecha(s) que no están en el fixture de ${S.nombre}: ${sobran.map(x=>fmt(x.iso)).join(", ")}.`);
+  vista("Distancias de "+nombre,
+    `<div class="small">${r.idaVuelta ? "El Excel trae km de ida y vuelta." : "El Excel trae km de <b>ida</b>: se multiplican por 2 para tener ida y vuelta."}</div>
+     <table><thead><tr><th>Fecha</th><th>Cancha</th><th>Km del Excel</th><th>Km ida y vuelta</th></tr></thead><tbody>${filas.map(x=>`<tr><td>${fmt(x.iso)}</td><td>${esc(x.cancha)}</td><td>${fnum(x.arch)}</td><td><b>${fnum(x.km)}</b></td></tr>`).join("")}</tbody></table>${listaAvisos(av)}`,
+    Object.keys(aplicar).length ? `Cargar ${Object.keys(aplicar).length} distancias` : "", Object.keys(aplicar).length ? () => {
+      S5.sembrado = true; Object.assign(S5.km, aplicar); cambioKm(); msgPaso("aviso-proto5",""); dibujarPaso5(); } : null);
+});
+$("b-subir5").addEventListener("click", () => $("f-dist").click());
 
 /* ===== Navegación entre pasos ===== */
 const PASOS = ["Fixture","Conductores y autos","Fechas no disponibles","Plantel","Distancias","Reglas","Resultado"];
