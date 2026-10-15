@@ -18,13 +18,14 @@
     return cargando || (cargando = new Promise((ok, ko) => {
       const s = document.createElement("script");
       s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(clave)}&loading=async&v=weekly&language=es&region=AR`;
+      g.gm_authFailure = () => { P.error = "Google rechazó la clave. Revisá en Google Cloud que la clave permita el sitio https://ramamolina.github.io/* y las 3 APIs (Maps JavaScript, Places New, Routes), y que la facturación esté activa."; P.alError && P.alError(P.error); };
       s.async = true; s.onload = ok; s.onerror = () => { cargando = null; ko(new Error("No se pudo conectar con Google Maps.")); };
       document.head.appendChild(s);
     }));
   }
 
   const P = {
-    clave: "",
+    clave: "", error: "", alError: null,
     async buscar(texto, sesgo) {        // candidatos de lugar: [{id, nombre, dir, lat, lng}]
       await cargar(P.clave); contar("buscar");
       const { Place } = await g.google.maps.importLibrary("places");

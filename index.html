@@ -1216,18 +1216,24 @@ $("lista-sedes").addEventListener("click", conMsg5(async e => {
 }));
 function conMsg5(f){ return async (...a) => { try { await f(...a); } catch(e){ msgPaso("aviso-proto5", "No se pudo: "+e.message); } }; }
 
-$("b-mapa").addEventListener("click", conMsg5(async () => {
-  msgPaso("aviso-proto5", ""); let h = null, ll = S5.ll;
+$("b-mapa").addEventListener("click", async () => {
+  msgPaso("aviso-proto5", ""); let h = null;
   vista("Punto central del pool",
     `<div class="small">Tocá el mapa o arrastrá el pin hasta el punto central del pool. También podés buscar un lugar.</div>
      <div class="fila"><label>Buscar lugar<input type="text" id="v-lugar" autocomplete="off" placeholder="Ej: Av. Maipú y Ruta 9, Vicente López"></label></div>
-     <div class="row"><button type="button" id="v-buscar">Buscar</button></div><div id="v-msg" class="small"></div>
+     <div class="row"><button type="button" id="v-buscar">Buscar</button></div>
+     <div id="v-msg" class="alert info" role="status">Cargando el mapa de Google…</div>
      <div id="v-mapa" style="height:320px;border-radius:8px;border:1px solid var(--line);margin-top:8px"></div>`,
     "Usar este punto", () => { const p = h && h.get(); if(!p) return; S5.ll = p; S5.ejemplo = false; cambioKm(); dibujarPaso5(); });
-  const M = await mapas();
-  h = await M.montarMapa($("v-mapa"), S5.ll, p => { ll = p; });
-  $("v-buscar").onclick = async () => { try { $("v-msg").textContent = "Buscando…"; const r = await M.buscar($("v-lugar").value, S5.ll); $("v-msg").textContent = r.length ? r[0].dir : "Sin resultados."; if(r.length) h.ir({lat:r[0].lat, lng:r[0].lng}); } catch(err){ $("v-msg").textContent = err.message; } };
-}));
+  const msg = t => { $("v-msg").textContent = t; $("v-msg").hidden = !t; };
+  try {
+    const M = await mapas(); M.alError = msg;
+    h = await M.montarMapa($("v-mapa"), S5.ll, () => {});
+    msg(M.error || "");
+    $("v-buscar").onclick = async () => { try { msg("Buscando…"); const r = await M.buscar($("v-lugar").value, S5.ll); msg(r.length ? r[0].nombre+" · "+r[0].dir : "Sin resultados."); if(r.length) h.ir({lat:r[0].lat, lng:r[0].lng}); } catch(err){ msg("No se pudo buscar: "+(err.message||err)); } };
+    setTimeout(() => { if(!M.error && !$("v-mapa").querySelector("canvas, img, .gm-style")) msg("El mapa no se dibujó. Mandame este texto: sin .gm-style en la página."); }, 4000);
+  } catch(err){ msg("No se pudo cargar el mapa: "+(err.message||err)); }
+});
 
 $("b-calc5").addEventListener("click", conMsg5(async () => {
   if(!S5.ll){ msgPaso("aviso-proto5", "Primero marcá el punto central en el mapa."); return; }
