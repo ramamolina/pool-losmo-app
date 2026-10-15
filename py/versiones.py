@@ -15,6 +15,8 @@ def bullets(res, base_id=None):
     if r["sin_fines_consecutivos"]: b.append("Nadie maneja dos fines de semana calendario seguidos")
     if r["viajes_parejos"]: b.append(f"Viajes parejos (diferencia máxima {r['max_dif_viajes']})")
     if r["compensar_viaje_extra"]: b.append("Quien hace un viaje extra tiene mayoría de local")
+    if r.get("autos_extra"):
+        b.append(f"El motor puede sumar hasta {r['autos_extra']} auto(s) sobre el mínimo en cada fecha (costo {_f(r.get('costo_auto_extra_km') or 0)} km por auto extra)")
     if r["viaje_extra_a"]: b.append(f"Viaje extra fijado a {r['viaje_extra_a']}")
     if p["estacionamiento_en_km"]:
         b.append(f"Estacionamiento convertido a {_f(engine.km_estacionamiento(p))} km por partido de visitante")

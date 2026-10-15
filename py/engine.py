@@ -17,6 +17,8 @@ REGLAS_BASE = {
     "viaje_extra_a": None,          # id de conductor al que se le fija el viaje extra (o None: elige el motor)
     "minimizar_cambios_vs": None,   # lista de choferes (uno por partido) de la versión anterior: cambiar lo mínimo
     "tolerancia_km": 0,             # cuánto se acepta empeorar la diferencia de carga para cambiar menos fechas
+    "autos_extra": 0,               # autos que el motor puede sumar sobre el mínimo que alcanza en cada fecha
+    "costo_auto_extra_km": 0,       # cuánto "cuesta" (en km de diferencia) cada auto que se suma
 }
 
 # Parámetros de la temporada (se cargan en la pantalla de parámetros de la app)
@@ -64,35 +66,58 @@ def cargar(path):
     return d
 
 def autos_necesarios(datos):
-    """Autos por fecha según capacidad (asientos totales; pasajeros = asientos - 1) y jugadores a transportar."""
-    n = datos["plantel"]["a_transportar"]
-    caps = sorted((c["asientos"] - 1 for c in datos["conductores"]), reverse=True)
+    """Autos mínimos por fecha según capacidad (asientos totales; pasajeros = asientos - 1) y jugadores a transportar,
+    con todos los conductores disponibles."""
+    return max(_autos_min([c["asientos"] - 1 for c in datos["conductores"]], datos["plantel"]["a_transportar"]) or 1, 1)
+
+def _autos_min(caps, n):
+    """Mínimo de autos (usando primero los más grandes) para llevar n chicos; None si no alcanzan."""
     autos, resto = 0, n
-    for cap in caps:
+    for cap in sorted(caps, reverse=True):
         if resto <= 0:
             break
         autos += 1
         resto -= cap
-    return max(autos, 1)
+    return autos if resto <= 0 else None
+
+def autos_por_fecha(datos, reglas=None):
+    """Por fecha: autos mínimos con los conductores que pueden ese día (None si no alcanzan)."""
+    r = {**REGLAS_BASE, **(reglas or {})}
+    n = datos["plantel"]["a_transportar"]
+    out = []
+    for p in datos["partidos"]:
+        caps = [c["asientos"] - 1 for c in datos["conductores"]
+                if not (r["disponibilidad"] and p["fecha"] in c["no_disponible"])]
+        out.append(_autos_min(caps, n))
+    return out
 
 def optimizar(datos, reglas=None, params=None):
+    """Un conductor o más por fecha: cada auto que sale lleva sus asientos - 1 chicos y hace el viaje completo.
+    La cantidad de autos de cada fecha la decide el motor entre el mínimo que alcanza y el mínimo + `autos_extra`."""
     r = {**REGLAS_BASE, **(reglas or {})}
     P, C = datos["partidos"], datos["conductores"]
     nP, nC = len(P), len(C)
-    if autos_necesarios(datos) != 1:
-        raise NotImplementedError("Etapa 1: por ahora un solo auto por fecha")
+    kids = datos["plantel"]["a_transportar"]
+    caps = [c["asientos"] - 1 for c in C]
     km = cargas(datos, params)
     loc = [1 if p["cond"] == "L" else 0 for p in P]
-    base = nP // nC  # viajes mínimos esperados
+    extra = int(r["autos_extra"] or 0)
+    lam = float(r["costo_auto_extra_km"] or 0)
+    minimos = autos_por_fecha(datos, r)
+    if any(m is None for m in minimos):
+        return None
+    disp = [[not (r["disponibilidad"] and P[m]["fecha"] in C[c]["no_disponible"]) for c in range(nC)] for m in range(nP)]
+    maxa = [min(minimos[m] + extra, sum(disp[m]), kids) for m in range(nP)]
 
-    # variables: x[m,c] (nP*nC) | Kmax | Kmin | y[c] (nC)
+    # variables: x[m,c] (nP*nC) | Kmax | Kmin | nmin | y[c] (nC)
     ix = lambda m, c: m * nC + c
-    iKmax, iKmin = nP * nC, nP * nC + 1
-    iy = lambda c: nP * nC + 2 + c
-    nv = nP * nC + 2 + nC
-    integrality = np.zeros(nv); integrality[:nP * nC] = 1; integrality[nP * nC + 2:] = 1
+    iKmax, iKmin, iN = nP * nC, nP * nC + 1, nP * nC + 2
+    iy = lambda c: nP * nC + 3 + c
+    nv = nP * nC + 3 + nC
+    integrality = np.zeros(nv); integrality[:nP * nC] = 1; integrality[iN:] = 1
     lb, ub = np.zeros(nv), np.ones(nv)
     ub[iKmax] = ub[iKmin] = 1e6
+    ub[iN] = 2 * nP
 
     rows, lo, hi = [], [], []
     def add(coefs, l, h):
@@ -100,13 +125,12 @@ def optimizar(datos, reglas=None, params=None):
         for i, a in coefs: v[i] += a
         rows.append(v); lo.append(l); hi.append(h)
 
-    for m in range(nP):  # un conductor por fecha
-        add([(ix(m, c), 1) for c in range(nC)], 1, 1)
-    if r["disponibilidad"]:
+    for m in range(nP):  # autos de la fecha: alcanzan los asientos y no más que el máximo permitido
+        add([(ix(m, c), caps[c]) for c in range(nC)], kids, np.inf)
+        add([(ix(m, c), 1) for c in range(nC)], 1, maxa[m])
         for c in range(nC):
-            for m in range(nP):
-                if P[m]["fecha"] in C[c]["no_disponible"]:
-                    ub[ix(m, c)] = 0
+            if not disp[m][c]:
+                ub[ix(m, c)] = 0
     if r["sin_fines_consecutivos"]:
         for m in range(nP - 1):
             if (P[m + 1]["fecha"] - P[m]["fecha"]).days == 7:
@@ -116,41 +140,46 @@ def optimizar(datos, reglas=None, params=None):
         kc = [(ix(m, c), km[m]) for m in range(nP)]
         add(kc + [(iKmax, -1)], -np.inf, 0)
         add(kc + [(iKmin, -1)], 0, np.inf)
+    ntot = lambda c: [(ix(m, c), 1) for m in range(nP)]
+    for c in range(nC):  # nmin <= viajes de cada conductor (queda en el mínimo real porque conviene)
+        add(ntot(c) + [(iN, -1)], 0, np.inf)
     if r["viajes_parejos"]:
         for c in range(nC):
             for e in range(nC):
                 if c != e:
-                    add([(ix(m, c), 1) for m in range(nP)] + [(ix(m, e), -1) for m in range(nP)],
-                        -np.inf, r["max_dif_viajes"])
+                    add(ntot(c) + [(ix(m, e), -1) for m in range(nP)], -np.inf, r["max_dif_viajes"])
     if r["compensar_viaje_extra"]:
-        big = nP + 1
+        big = sum(maxa) + 1
+        D = r["max_dif_viajes"] if r["viajes_parejos"] else sum(maxa)
         for c in range(nC):
-            n_c = [(ix(m, c), 1) for m in range(nP)]
-            # y=1 si n_c >= base+1
-            add(n_c + [(iy(c), -(nP - base))], -np.inf, base)
-            add(n_c + [(iy(c), -(base + 1))], 0, np.inf)
-            # y=1  =>  2*L_c - n_c >= 1
+            # y=1 si hace más viajes que el mínimo:  n_c - nmin <= D*y
+            add(ntot(c) + [(iN, -1), (iy(c), -D)], -np.inf, 0)
+            # y=1  =>  2*L_c - n_c >= 1  (mayoría de local)
             add([(ix(m, c), 2 * loc[m] - 1) for m in range(nP)] + [(iy(c), -big)], 1 - big, np.inf)
-
     if r["viaje_extra_a"]:
         c = [k["id"] for k in C].index(r["viaje_extra_a"])
-        add([(ix(m, c), 1) for m in range(nP)], base + 1, np.inf)
+        add(ntot(c) + [(iN, -1)], 1, np.inf)
 
     A = np.array(rows); cons_lo, cons_hi = np.array(lo), np.array(hi)
     cobj = np.zeros(nv); cobj[iKmax], cobj[iKmin] = 1, -1
+    for m in range(nP):          # cada auto de más cuesta lam km equivalentes de diferencia
+        for c in range(nC):
+            cobj[ix(m, c)] += lam
     res = milp(cobj, constraints=LinearConstraint(A, cons_lo, cons_hi),
                integrality=integrality, bounds=Bounds(lb, ub))
     if res.status != 0:
         return None
     dif = res.fun
-    # etapa 2: con esa diferencia (más la tolerancia), bajar el máximo de carga o,
+    # etapa 2: con ese costo (más la tolerancia), bajar el máximo de carga o,
     # si se pidió, cambiar lo mínimo respecto de la versión anterior
     ids = [k["id"] for k in C]
     cobj2 = np.zeros(nv)
     prev = r.get("minimizar_cambios_vs")
     if prev:
         for m in range(nP):
-            cobj2[ix(m, ids.index(prev[m]))] = -1   # maximizar coincidencias = minimizar cambios
+            for pid in str(prev[m]).split(" + "):
+                if pid in ids:
+                    cobj2[ix(m, ids.index(pid))] -= 1   # maximizar coincidencias = minimizar cambios
     else:
         cobj2[iKmax] = 1
     tol = r.get("tolerancia_km", 0) or 0
@@ -158,16 +187,19 @@ def optimizar(datos, reglas=None, params=None):
     res2 = milp(cobj2, constraints=LinearConstraint(A2, lo2, hi2),
                 integrality=integrality, bounds=Bounds(lb, ub))
     x = np.round(res2.x[:nP * nC]).astype(int).reshape(nP, nC)
-    return resumen(datos, [C[int(np.argmax(x[m]))]["id"] for m in range(nP)], r, params)
+    asign = [[C[c]["id"] for c in range(nC) if x[m, c]] for m in range(nP)]
+    return resumen(datos, asign, r, params, minimos)
 
-def resumen(datos, asign, reglas=None, params=None):
+def resumen(datos, asign, reglas=None, params=None, minimos=None):
     P, C = datos["partidos"], datos["conductores"]
     w = cargas(datos, params)
     out = {c["id"]: {"viajes": 0, "locales": 0, "visitante": 0, "km": 0.0, "carga_km": 0.0} for c in C}
-    for p, wm, a in zip(P, w, asign):
-        o = out[a]; o["viajes"] += 1
-        o["km"] = round(o["km"] + p["km_iv"], 1); o["carga_km"] = round(o["carga_km"] + wm, 1)
-        o["locales" if p["cond"] == "L" else "visitante"] += 1
+    asign = [[a] if isinstance(a, str) else list(a) for a in asign]
+    for p, wm, grupo in zip(P, w, asign):
+        for a in grupo:
+            o = out[a]; o["viajes"] += 1
+            o["km"] = round(o["km"] + p["km_iv"], 1); o["carga_km"] = round(o["carga_km"] + wm, 1)
+            o["locales" if p["cond"] == "L" else "visitante"] += 1
     cs = [o["carga_km"] for o in out.values()]
     p = {**PARAMS_BASE, **(params or {})}
     liquidacion = None
@@ -176,11 +208,12 @@ def resumen(datos, asign, reglas=None, params=None):
         costo = p["estacionamiento_pesos"]
         n = len(C)
         saldo = {c["id"]: 0.0 for c in C}
-        for pa, a in zip(P, asign):
+        for pa, grupo in zip(P, asign):
             if pa["cond"] == "V":
-                for k in saldo: saldo[k] -= costo / n
-                saldo[a] += costo
+                for k in saldo: saldo[k] -= costo * len(grupo) / n
+                for a in grupo: saldo[a] += costo
         liquidacion = {k: round(v) for k, v in saldo.items()}  # + recibe, - paga
-    return {"liquidacion_estacionamiento": liquidacion, "asignacion": list(zip([p["fecha"].isoformat() for p in P], asign)),
+    return {"liquidacion_estacionamiento": liquidacion, "asignacion": list(zip([p["fecha"].isoformat() for p in P], [" + ".join(g) for g in asign])),
+            "autos": [len(g) for g in asign], "autos_minimos": minimos,
             "por_conductor": out, "dif_km": round(max(cs) - min(cs), 1),
             "reglas": reglas, "params": params}

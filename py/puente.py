@@ -13,10 +13,10 @@ def correr(texto):
                          "no_disponible": {f(x) for x in c["no_disponible"]}} for c in d["conductores"]],
         "plantel": {"a_transportar": int(d["a_transportar"])},
     }
-    try:
-        res = engine.optimizar(datos, d.get("reglas"), d.get("params"))
-    except NotImplementedError:
-        return json.dumps({"error": "varios_autos", "autos": engine.autos_necesarios(datos)})
+    falta = [pa["fecha"].isoformat() for pa, m in zip(datos["partidos"], engine.autos_por_fecha(datos, d.get("reglas"))) if m is None]
+    if falta:
+        return json.dumps({"error": "sin_capacidad", "fechas": falta})
+    res = engine.optimizar(datos, d.get("reglas"), d.get("params"))
     if res is None:
         return json.dumps({"error": "sin_solucion"})
     res["resumen"] = versiones.bullets(res, d.get("base_id"))

@@ -300,7 +300,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
 
   <section class="card" aria-labelledby="h-au">
     <h2 id="h-au">Cuántos autos hacen falta</h2>
-    <div class="small">No se carga: sale de los asientos de los conductores. Cada auto lleva sus asientos menos uno (el conductor ocupa un lugar), y se usan primero los autos más grandes.</div>
+    <div class="small">No se carga: sale de los asientos de los conductores. Cada auto lleva sus asientos menos uno (el conductor ocupa un lugar). Esta cuenta es el <b>mínimo</b> de autos, usando primero los más grandes; en el paso Reglas elegís si el motor puede sumar autos para repartir mejor la carga.</div>
     <div class="tablewrap"><table id="tabla-rangos"></table></div>
     <div class="small" id="rangos-nota"></div>
     <h3 style="font-size:14px;font-weight:600;margin:6px 0 0">En cada fecha, con quienes pueden ese día</h3>
@@ -356,6 +356,13 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
       <div class="sw" data-sw="r-par"><input type="checkbox" role="switch" id="r-par" checked aria-labelledby="r-par-t"><div class="tx"><b id="r-par-t">Viajes parejos</b><span class="small">Limita la diferencia de cantidad de viajes entre conductores.</span><div class="par"><label>Diferencia máxima de viajes<select id="r-par-n"><option value="1" selected>1 viaje</option><option value="2">2 viajes</option><option value="3">3 viajes</option></select></label></div></div></div>
       <div class="sw" data-sw="r-comp"><input type="checkbox" role="switch" id="r-comp" checked aria-labelledby="r-comp-t"><div class="tx"><b id="r-comp-t">Compensar al del viaje extra</b><span class="small">Quien hace más viajes que el mínimo tiene mayoría de partidos de local.</span></div></div>
       <div class="sw off" data-sw="r-extra"><input type="checkbox" role="switch" id="r-extra" aria-labelledby="r-extra-t"><div class="tx"><b id="r-extra-t">Fijar quién hace el viaje extra</b><span class="small">Si sobra un viaje, elegís a quién le toca. Apagado: lo elige la app.</span><div class="par"><label>Conductor<select id="r-extra-a"></select></label></div></div></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-autos">
+    <h2 id="h-autos">Autos por fecha</h2>
+    <div class="small">En cada fecha hay un mínimo de autos: los que alcanzan para llevar a todos, usando primero los más grandes. Dejar que el motor sume autos reparte la carga entre más conductores, porque si solo manejan los de los autos grandes se cargan siempre los mismos.</div>
+      <div class="sw" data-sw="r-autos"><input type="checkbox" role="switch" id="r-autos" checked aria-labelledby="r-autos-t"><div class="tx"><b id="r-autos-t">Permitir más autos que el mínimo</b><span class="small">El motor decide cuántos autos va en cada fecha. Cada auto de más suma sus km y un día de pool a quien lo maneja.</span><div class="par"><label>Autos de más, como máximo, por fecha<select id="r-autos-n"><option value="1" selected>1 auto</option><option value="2">2 autos</option></select></label>
+        <label>Costo de cada auto de más (km de desparejo)<input type="text" inputmode="decimal" id="r-autos-cost" value="10"></label></div><div class="small">El costo evita sumar autos si no mejoran el reparto en al menos esos km. Con 0 el motor suma los autos que quiera.</div></div></div>
   </section>
 
   <section class="card" aria-labelledby="h-pesos">
@@ -776,10 +783,10 @@ function dibujarPaso4(){
   // por cantidad de chicos: hasta cuántos chicos se llevan con 1, 2, 3… autos (todos los conductores disponibles)
   const caps = S2.drivers.map(d=>d.asientos-1).sort((x,y)=>y-x); let acum = 0, ant = 0;
   const rangos = caps.map((c,k) => { acum += c; const fila = {autos:k+1, desde:ant+1, hasta:acum}; ant = acum; return fila; });
-  $("tabla-rangos").innerHTML = `<thead><tr><th>Chicos a llevar</th><th class="c">Autos necesarios</th></tr></thead><tbody>${rangos.map(g =>
+  $("tabla-rangos").innerHTML = `<thead><tr><th>Chicos a llevar</th><th class="c">Autos mínimos</th></tr></thead><tbody>${rangos.map(g =>
     `<tr${S4.max>=g.desde && S4.max<=g.hasta ? ' style="background:var(--accent-soft)"' : ""}><td class="date">${g.desde===g.hasta?g.desde:`${g.desde} a ${g.hasta}`}</td><td class="num">${g.autos} ${g.autos===1?"auto":"autos"}</td></tr>`).join("")}</tbody>`;
   $("rangos-nota").textContent = S4.max > acum ? `Con ${S4.max} chicos no alcanzan ni siquiera todos los autos juntos (llevan ${acum}).` : `Con ${S4.max} chicos hacen falta ${autosNec(S4.max, S2.drivers.map(d=>d.asientos)).autos} ${autosNec(S4.max, S2.drivers.map(d=>d.asientos)).autos===1?"auto":"autos"} cuando están todos los conductores.`;
-  $("tabla-autos").innerHTML = `<thead><tr><th>Fecha</th><th class="c">Autos necesarios</th><th>Estado</th></tr></thead><tbody>${filas.map(f =>
+  $("tabla-autos").innerHTML = `<thead><tr><th>Fecha</th><th class="c">Autos mínimos</th><th>Estado</th></tr></thead><tbody>${filas.map(f =>
     `<tr><td class="date">${fmt(f.r.iso)} <span class="pill ${f.r.cond}">${f.r.cond}</span></td><td class="num">${f.a.autos}</td><td><span class="est ${f.a.alcanza?"ok":"no"}">${f.a.alcanza?"Alcanza":"No alcanza"}</span></td></tr>`).join("")}</tbody>`;
   const multi = filas.some(f=>f.a.autos>1), falta = filas.filter(f=>!f.a.alcanza);
   $("pl-nota").textContent = falta.length ? `En ${falta.length} fecha(s) no alcanzan los autos disponibles: hay que sumar un conductor o liberar a alguien.`
@@ -887,7 +894,8 @@ function armarEntrada(){
   const fs = fechasJuego(), ds = S2.drivers;
   const reglas = { disponibilidad:$("r-disp").checked, sin_fines_consecutivos:$("r-cons").checked,
     viajes_parejos:$("r-par").checked, max_dif_viajes:parseInt($("r-par-n").value,10),
-    compensar_viaje_extra:$("r-comp").checked, viaje_extra_a: $("r-extra").checked ? $("r-extra-a").value : null };
+    compensar_viaje_extra:$("r-comp").checked, viaje_extra_a: $("r-extra").checked ? $("r-extra-a").value : null,
+    autos_extra: $("r-autos").checked ? parseInt($("r-autos-n").value,10) : 0, costo_auto_extra_km: $("r-autos").checked ? num("r-autos-cost",0) : 0 };
   let baseId = null;
   if(!$("card-base").hidden && $("r-base").checked){
     const v = S7.versiones.find(x => x.id===$("r-base-v").value);
@@ -914,8 +922,8 @@ $("b-optimizar").addEventListener("click", async () => {
     await new Promise(r => setTimeout(r, 30));
     const entrada = armarEntrada();
     const out = JSON.parse(py.globals.get("puente").correr(JSON.stringify(entrada)));
-    if(out.error==="varios_autos"){ mostrarFalla(`Con ${S4.max} chicos hacen falta ${out.autos} autos por fecha. Por ahora el motor optimiza un solo auto por fecha; bajá el máximo del plantel o esperá la próxima versión.`); }
-    else if(out.error==="sin_solucion"){ mostrarFalla("No hay ningún reparto que cumpla todas las reglas prendidas. Probá apagar alguna (por ejemplo viajes parejos o fines de semana consecutivos)."); }
+    if(out.error==="sin_capacidad"){ mostrarFalla(`En ${out.fechas.map(fmt).join(", ")} no alcanzan los autos de los conductores que pueden ese día para llevar a ${S4.max} chicos. Sumá un conductor, liberá a alguien en el paso 3 o bajá el plantel.`); }
+    else if(out.error==="sin_solucion"){ mostrarFalla("No hay ningún reparto que cumpla todas las reglas prendidas. Probá permitir más autos que el mínimo o apagar alguna regla (por ejemplo viajes parejos o fines de semana consecutivos)."); }
     else {
       const id = "V"+(S7.versiones.length+1);
       S7.versiones.push({id, res:out, entrada, asig:Object.fromEntries(out.asignacion), base:entrada.base_id});
@@ -961,7 +969,7 @@ $("b-volver7").addEventListener("click", () => irPaso(6));
 
 
 /* ===== Guardar y abrir una copia del trabajo (archivo .json) ===== */
-const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-extra","r-extra-a","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","p-dpm","p-dpm-km","r-base","r-base-v","r-base-tol"];
+const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-extra","r-extra-a","r-autos","r-autos-n","r-autos-cost","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","p-dpm","p-dpm-km","r-base","r-base-v","r-base-tol"];
 let pasoActual = 1;
 function instantanea(){
   const ctl = {}; CTRL6.forEach(id => { const e = $(id); ctl[id] = e.type==="checkbox" ? e.checked : e.value; });
