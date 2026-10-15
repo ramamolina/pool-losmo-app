@@ -24,7 +24,7 @@
   --warn-bg:#35300F; --warn-line:#8C7420; --warn-ink:#F2DC93; --ok-bg:#17382B; --ok-ink:#7FD4A4; color-scheme:dark}
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.45;padding-inline:16px;padding-block:20px 56px}
-.wrap{max-width:760px;margin-inline:auto;display:flex;flex-direction:column;gap:16px}
+.wrap{width:100%;max-width:760px;margin-inline:auto;display:flex;flex-direction:column;gap:16px}
 h1,h2,h3,p{margin:0}
 .top{display:flex;flex-direction:column;gap:10px}
 .brand{font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -320,7 +320,14 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
     <div class="small">Todas las distancias se miden de ida y vuelta desde este punto, no desde la casa de cada conductor. Se elige para cada pool (categoría y rueda), así que hay que marcarlo cada vez.</div>
     <label for="centro">Dirección o referencia del punto central<input type="text" id="centro" autocomplete="off" placeholder="Ej: Av. Maipú y Ruta 9, Vicente López"></label>
     <div class="row"><button type="button" id="b-mapa">Elegir en el mapa</button></div>
-    <div class="alert info" id="aviso-proto5" hidden>El mapa de Google se conecta cuando la app esté publicada con su cuenta de Google Maps. En esta prueba las distancias del M17 ya vienen cargadas y se pueden corregir a mano.</div>
+    <div class="small" id="centro-ll"></div>
+    <div class="alert info" id="aviso-proto5" hidden></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-ca">
+    <h2 id="h-ca">Canchas</h2>
+    <div class="small">Para cada cancha, buscala en Google Maps y confirmá la correcta con un clic. Queda guardada en el directorio de este navegador y se reutiliza en otros pools. Si no aparece, escribí otro texto o dejá la distancia a mano en la tabla de abajo.</div>
+    <div id="lista-sedes" style="display:flex;flex-direction:column;gap:10px"></div>
   </section>
 
   <section class="card" aria-labelledby="h-di">
@@ -791,7 +798,7 @@ $("b-confirmar4").addEventListener("click", () => { S4.confirmado = true; dibuja
 
 /* ===== Paso 5: distancias ===== */
 const EJ_KM = {"sitas":67,"hindu":33.8,"san martin":50.2,"los matreros":74,"los tilos":178.2,"a d francesa":61.6,"liceo naval":86,"lomas athletic":86,"olivos":86,"san andres":86,"newman":86,"__local":86};
-const S5 = { centro:"Punto central del M17 (ejemplo)", km:{}, ejemplo:true, confirmado:false, sembrado:false };
+const S5 = { centro:"Punto central del M17 (ejemplo)", km:{}, ejemplo:true, confirmado:false, sembrado:false, ll:null, sed:{}, q:{}, res:{} };
 const claveSede = r => r.cond==="L" ? "__local" : norm(base(r.rival));
 function kmEjemplo(clave){
   if(clave in EJ_KM) return EJ_KM[clave];
@@ -806,6 +813,8 @@ function sedes(){ // [{clave, nombre, fechas[]}] en orden de aparición, la prop
   return [...m.values()].sort((a,b)=> (a.clave==="__local"?-1:b.clave==="__local"?1:0));
 }
 function dibujarPaso5(){
+  dibujarSedes();
+  $("centro-ll").textContent = S5.ll ? `Punto marcado en el mapa: ${S5.ll.lat.toFixed(5)}, ${S5.ll.lng.toFixed(5)}` : "Todavía no marcaste el punto en el mapa (hace falta para calcular con Google Maps).";
   if(!S5.sembrado){ S5.sembrado = true; sedes().forEach(s => { const v = kmEjemplo(s.clave); if(v!==undefined) S5.km[s.clave] = v; }); }
   $("centro").value = S5.centro; $("badge-ej5").hidden = !S5.ejemplo;
   const ss = sedes();
@@ -822,7 +831,7 @@ function cambioKm(){ S5.ejemplo=false; S5.confirmado=false; $("ok5").hidden=true
 $("tabla-km").addEventListener("change", e => { const i = e.target.closest("[data-sede]"); if(!i) return;
   const v = parseFloat(i.value.replace(",",".")); if(v>0) S5.km[i.dataset.sede] = v; else delete S5.km[i.dataset.sede]; cambioKm(); dibujarPaso5(); });
 $("centro").addEventListener("input", e => { S5.centro = e.target.value; S5.ejemplo = false; });
-["b-mapa","b-calc5"].forEach(id => $(id).addEventListener("click", () => { $("aviso-proto5").hidden = false; }));
+
 $("b-volver5").addEventListener("click", () => irPaso(4));
 $("b-confirmar5").addEventListener("click", () => { S5.confirmado = true; irPaso(6); });
 
@@ -959,7 +968,7 @@ function instantanea(){
   return { app:"pool-losmo", formato:1, guardado:new Date().toISOString(), paso:pasoActual,
     fixture:{ club:S.club, divIdx:S.divIdx, nombre:S.nombre, cat:DATA.divs[S.divIdx].cat, rows:S.rows, confirmado:S.confirmado },
     conductores:S2.drivers, noPuede:[...S3.no], decisiones:S3.dec,
-    plantel:{max:S4.max}, distancias:{centro:S5.centro, km:S5.km},
+    plantel:{max:S4.max}, distancias:{centro:S5.centro, km:S5.km, ll:S5.ll, sed:S5.sed},
     reglas:ctl, propias:S6.propias,
     versiones:S7.versiones, activa:S7.activa, elegida:S7.elegida };
 }
@@ -971,7 +980,7 @@ function restaurar(o){
   S2.drivers = o.conductores; uid = Math.max(uid, ...S2.drivers.map(d=>d.id)); S2.ejemplo = false; S2.confirmado = false;
   S3.no = new Set(o.noPuede); S3.dec = o.decisiones || {}; S3.sembrado = true; S3.ejemplo = false; S3.confirmado = false;
   S4.max = o.plantel.max; S4.ejemplo = false; S4.confirmado = false;
-  S5.centro = o.distancias.centro; S5.km = o.distancias.km; S5.sembrado = true; S5.ejemplo = false; S5.confirmado = false;
+  S5.centro = o.distancias.centro; S5.km = o.distancias.km; S5.ll = o.distancias.ll || null; S5.sed = o.distancias.sed || {}; Object.entries(S5.sed).forEach(([k,v]) => dirGuardar(k,v)); S5.sembrado = true; S5.ejemplo = false; S5.confirmado = false;
   S6.propias = o.propias || [];
   S7.versiones = o.versiones || []; S7.activa = o.activa; S7.elegida = o.elegida;
   S7.base = (() => { const i = S7.versiones.findIndex(x=>x.id===S7.activa); return i>0 ? S7.versiones[i-1].id : null; })();
@@ -1165,6 +1174,71 @@ pedirArchivo("f-dist", "aviso-proto5", "leerDistancias", (r, nombre) => {
       S5.sembrado = true; Object.assign(S5.km, aplicar); cambioKm(); msgPaso("aviso-proto5",""); dibujarPaso5(); } : null);
 });
 $("b-subir5").addEventListener("click", () => $("f-dist").click());
+
+
+/* ===== Google Maps: canchas, punto central y distancias ===== */
+const MAPS_KEY = "";   // clave de API de Google Maps (pública; la protege la restricción por sitio en Google Cloud)
+async function mapas(){
+  if(!globalThis.Mapas) await cargarScripts(["vendor/mapas.js"]);
+  Mapas.clave = MAPS_KEY; return Mapas;
+}
+const DIR_KEY = "poollosmo.sedes";
+function dirLeer(){ try { return JSON.parse(localStorage.getItem(DIR_KEY) || "{}"); } catch(e){ return {}; } }
+function dirGuardar(k, v){ try { const d = dirLeer(); d[k] = v; localStorage.setItem(DIR_KEY, JSON.stringify(d)); } catch(e){} }
+function sedeDe(k){ // sede confirmada de este pool, o la del directorio si ya se confirmó antes
+  if(S5.sed[k]) return {...S5.sed[k], delDir:false};
+  const d = dirLeer()[k]; return d ? {...d, delDir:true} : null;
+}
+function consultaSede(s){ return S5.q[s.clave] ?? ((s.clave==="__local" ? S.club : s.nombre) + " rugby club, Buenos Aires, Argentina"); }
+function dibujarSedes(){
+  $("lista-sedes").innerHTML = sedes().map(s => {
+    const c = sedeDe(s.clave), res = S5.res[s.clave];
+    const estado = c ? `<div class="small"><b style="color:var(--ok-ink)">✔ Confirmada${c.delDir?" (del directorio)":""}:</b> ${esc(c.nombre)} · ${esc(c.dir)}</div>` : `<div class="small">Sin confirmar</div>`;
+    const cand = res === undefined ? "" : typeof res === "string" ? `<div class="small">${esc(res)}</div>`
+      : res.length ? `<div style="display:flex;flex-direction:column;gap:6px">${res.map((r,i)=>`<button type="button" data-elegir="${esc(s.clave)}|${i}" style="text-align:left"><b>${esc(r.nombre)}</b><br><span class="small">${esc(r.dir)}</span></button>`).join("")}</div>` : `<div class="small">Google no encontró resultados. Probá con otro texto.</div>`;
+    return `<div class="drv" data-sede="${esc(s.clave)}"><div><b>${esc(s.nombre)}</b> <span class="small">${s.fechas.map(fmt).join(", ")}</span></div>${estado}
+      <div class="fila"><label>Buscar en Google Maps<input type="text" data-q value="${esc(consultaSede(s))}" autocomplete="off"></label></div>
+      <div class="row"><button type="button" data-buscar="${esc(s.clave)}">${c?"Buscar otra":"Buscar"}</button></div>${cand}</div>`;
+  }).join("");
+}
+$("lista-sedes").addEventListener("input", e => { const c = e.target.closest("[data-sede]"); if(c && e.target.matches("[data-q]")) S5.q[c.dataset.sede] = e.target.value; });
+$("lista-sedes").addEventListener("click", conMsg5(async e => {
+  const b = e.target.closest("button"); if(!b) return;
+  if(b.dataset.buscar){
+    const k = b.dataset.buscar, s = sedes().find(x=>x.clave===k); S5.res[k] = "Buscando…"; dibujarSedes();
+    try { S5.res[k] = await (await mapas()).buscar(consultaSede(s), S5.ll); } catch(err){ S5.res[k] = "No se pudo buscar: "+err.message; }
+    dibujarSedes();
+  } else if(b.dataset.elegir){
+    const [k,i] = b.dataset.elegir.split("|"), r = S5.res[k][+i];
+    const v = {nombre:r.nombre, dir:r.dir, lat:r.lat, lng:r.lng, id:r.id};
+    S5.sed[k] = v; dirGuardar(k, v); delete S5.res[k]; cambioKm(); dibujarSedes();
+  }
+}));
+function conMsg5(f){ return async (...a) => { try { await f(...a); } catch(e){ msgPaso("aviso-proto5", "No se pudo: "+e.message); } }; }
+
+$("b-mapa").addEventListener("click", conMsg5(async () => {
+  msgPaso("aviso-proto5", ""); let h = null, ll = S5.ll;
+  vista("Punto central del pool",
+    `<div class="small">Tocá el mapa o arrastrá el pin hasta el punto central del pool. También podés buscar un lugar.</div>
+     <div class="fila"><label>Buscar lugar<input type="text" id="v-lugar" autocomplete="off" placeholder="Ej: Av. Maipú y Ruta 9, Vicente López"></label></div>
+     <div class="row"><button type="button" id="v-buscar">Buscar</button></div><div id="v-msg" class="small"></div>
+     <div id="v-mapa" style="height:320px;border-radius:8px;border:1px solid var(--line);margin-top:8px"></div>`,
+    "Usar este punto", () => { const p = h && h.get(); if(!p) return; S5.ll = p; S5.ejemplo = false; cambioKm(); dibujarPaso5(); });
+  const M = await mapas();
+  h = await M.montarMapa($("v-mapa"), S5.ll, p => { ll = p; });
+  $("v-buscar").onclick = async () => { try { $("v-msg").textContent = "Buscando…"; const r = await M.buscar($("v-lugar").value, S5.ll); $("v-msg").textContent = r.length ? r[0].dir : "Sin resultados."; if(r.length) h.ir({lat:r[0].lat, lng:r[0].lng}); } catch(err){ $("v-msg").textContent = err.message; } };
+}));
+
+$("b-calc5").addEventListener("click", conMsg5(async () => {
+  if(!S5.ll){ msgPaso("aviso-proto5", "Primero marcá el punto central en el mapa."); return; }
+  const lista = sedes().map(s => ({s, c:sedeDe(s.clave)})), ok = lista.filter(x=>x.c), faltan = lista.filter(x=>!x.c);
+  if(!ok.length){ msgPaso("aviso-proto5", "Primero confirmá las canchas (sección Canchas)."); return; }
+  msgPaso("aviso-proto5", "Calculando distancias…");
+  const km = await (await mapas()).matriz(S5.ll, ok.map(x=>x.c)), sinRuta = [];
+  ok.forEach((x,i) => { if(km[i]==null) sinRuta.push(x.s.nombre); else S5.km[x.s.clave] = Math.round(km[i]*2*10)/10; });
+  S5.sembrado = true; cambioKm(); dibujarPaso5();
+  msgPaso("aviso-proto5", `Calculé ${ok.length-sinRuta.length} distancias (ida y vuelta, ruta más rápida).` + (faltan.length ? ` Faltan confirmar: ${faltan.map(x=>x.s.nombre).join(", ")}.` : "") + (sinRuta.length ? ` Google no encontró ruta a: ${sinRuta.join(", ")}.` : ""));
+}));
 
 /* ===== Navegación entre pasos ===== */
 const PASOS = ["Fixture","Conductores y autos","Fechas no disponibles","Plantel","Distancias","Reglas","Resultado"];
