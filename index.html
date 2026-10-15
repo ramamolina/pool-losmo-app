@@ -809,7 +809,7 @@ function sedes(){ // [{clave, nombre, fechas[]}] en orden de aparición, la prop
 }
 function dibujarPaso5(){
   dibujarSedes();
-  $("centro-ll").textContent = S5.ll ? `Punto marcado en el mapa: ${S5.ll.lat.toFixed(5)}, ${S5.ll.lng.toFixed(5)}` : "Todavía no marcaste el punto en el mapa (hace falta para calcular con Google Maps).";
+  $("centro-ll").textContent = S5.ll ? `Punto marcado en el mapa: ${S5.ref ? S5.ref + " (" : ""}${S5.ll.lat.toFixed(5)}, ${S5.ll.lng.toFixed(5)}${S5.ref ? ")" : ""}` : "Todavía no marcaste el punto en el mapa (hace falta para calcular con Google Maps).";
   if(!S5.sembrado){ S5.sembrado = true; sedes().forEach(s => { const v = kmEjemplo(s.clave); if(v!==undefined) S5.km[s.clave] = v; }); }
   $("centro").value = S5.centro; $("badge-ej5").hidden = !S5.ejemplo;
   const ss = sedes();
@@ -964,7 +964,7 @@ function instantanea(){
   return { app:"pool-losmo", formato:1, guardado:new Date().toISOString(), paso:pasoActual,
     fixture:{ club:S.club, divIdx:S.divIdx, nombre:S.nombre, cat:DATA.divs[S.divIdx].cat, rows:S.rows, confirmado:S.confirmado },
     conductores:S2.drivers, noPuede:[...S3.no], decisiones:S3.dec,
-    plantel:{max:S4.max}, distancias:{centro:S5.centro, km:S5.km, ll:S5.ll, sed:S5.sed},
+    plantel:{max:S4.max}, distancias:{centro:S5.centro, km:S5.km, ll:S5.ll, ref:S5.ref||"", sed:S5.sed},
     reglas:ctl, propias:S6.propias,
     versiones:S7.versiones, activa:S7.activa, elegida:S7.elegida };
 }
@@ -976,7 +976,7 @@ function restaurar(o){
   S2.drivers = o.conductores; uid = Math.max(uid, ...S2.drivers.map(d=>d.id)); S2.ejemplo = false; S2.confirmado = false;
   S3.no = new Set(o.noPuede); S3.dec = o.decisiones || {}; S3.sembrado = true; S3.ejemplo = false; S3.confirmado = false;
   S4.max = o.plantel.max; S4.ejemplo = false; S4.confirmado = false;
-  S5.centro = o.distancias.centro; S5.km = o.distancias.km; S5.ll = o.distancias.ll || null; S5.sed = o.distancias.sed || {}; Object.entries(S5.sed).forEach(([k,v]) => dirGuardar(k,v)); S5.sembrado = true; S5.ejemplo = false; S5.confirmado = false;
+  S5.centro = o.distancias.centro; S5.km = o.distancias.km; S5.ll = o.distancias.ll || null; S5.ref = o.distancias.ref || ""; S5.sed = o.distancias.sed || {}; Object.entries(S5.sed).forEach(([k,v]) => dirGuardar(k,v)); S5.sembrado = true; S5.ejemplo = false; S5.confirmado = false;
   S6.propias = o.propias || [];
   S7.versiones = o.versiones || []; S7.activa = o.activa; S7.elegida = o.elegida;
   S7.base = (() => { const i = S7.versiones.findIndex(x=>x.id===S7.activa); return i>0 ? S7.versiones[i-1].id : null; })();
@@ -1220,7 +1220,8 @@ $("b-mapa").addEventListener("click", async () => {
      <div class="row"><button type="button" id="v-buscar">Buscar</button></div>
      <div id="v-msg" class="alert info" role="status">Cargando el mapa de Google…</div>
      <div id="v-mapa" style="height:320px;border-radius:8px;border:1px solid var(--line);margin-top:8px"></div>`,
-    "Usar este punto", () => { const p = h && h.get(); if(!p) return; S5.ll = p; S5.ejemplo = false; cambioKm(); dibujarPaso5(); });
+    "Usar este punto", () => { const p = h && h.get(); if(!p) return; S5.ll = p; S5.ref = ""; S5.ejemplo = false; cambioKm(); dibujarPaso5();
+      mapas().then(M => M.referencia(p)).then(t => { if(S5.ll === p){ S5.ref = t || ""; dibujarPaso5(); } }).catch(()=>{}); });
   const msg = t => { $("v-msg").textContent = t; $("v-msg").hidden = !t; };
   try {
     const M = await mapas(); M.alError = msg;

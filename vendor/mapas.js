@@ -34,6 +34,18 @@
       const { places } = await Place.searchByText(req);
       return (places || []).map(p => ({ id: p.id, nombre: p.displayName, dir: p.formattedAddress, lat: p.location.lat(), lng: p.location.lng() }));
     },
+    async referencia(ll) {              // nombre de lugar cercano + localidad + partido: "Cerca de X · Localidad, Partido"
+      await cargar(P.clave); contar("buscar");
+      const { Place } = await g.google.maps.importLibrary("places");
+      const { places } = await Place.searchNearby({ fields: ["displayName", "formattedAddress", "addressComponents"],
+        locationRestriction: { center: { lat: ll.lat, lng: ll.lng }, radius: 300 }, maxResultCount: 1, rankPreference: "DISTANCE", language: "es", region: "ar" });
+      const p = (places || [])[0]; if (!p) return "";
+      const comp = t => { const c = (p.addressComponents || []).find(c => (c.types || []).includes(t)); return c ? (c.longText || c.long_name || "") : ""; };
+      const loc = comp("locality") || comp("sublocality") || comp("sublocality_level_1") || comp("neighborhood");
+      const par = comp("administrative_area_level_2");
+      const zona = [loc, par && par !== loc ? par : ""].filter(Boolean).join(", ");
+      return [p.displayName ? "Cerca de " + p.displayName : "", zona].filter(Boolean).join(" · ");
+    },
     async montarMapa(div, centro, alMover) {   // mapa con pin movible; devuelve {get()}
       await cargar(P.clave); contar("mapa");
       const { Map } = await g.google.maps.importLibrary("maps");
