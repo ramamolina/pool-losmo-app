@@ -30,6 +30,7 @@ h1,h2,h3,p{margin:0}
 .brand{font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 [hidden]{display:none!important}
 .steps{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;list-style:none;margin:0;padding:0}
+.btnlink{display:inline-flex;align-items:center;min-height:40px;padding:0 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);text-decoration:none;font-weight:500}
 .steps li{list-style:none;background:none;padding:0;margin:0}
 .steps button{display:block;width:100%;height:24px;padding:0;margin:0;border:0;background:transparent;box-shadow:none;cursor:pointer;position:relative;min-height:0;border-radius:0}
 .steps button::after{content:"";position:absolute;left:0;right:0;top:9px;height:6px;border-radius:3px;background:var(--line)}
@@ -421,6 +422,14 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
     </div>
     <div class="ok" id="ok7" hidden></div>
   </section>
+
+  <section class="card" id="card-envio" aria-labelledby="h-envio" hidden>
+    <h2 id="h-envio">Enviar a los conductores</h2>
+    <div class="small">Cada conductor recibe su resumen personal, el fixture completo y su calendario. Los botones abren WhatsApp o tu mail con el texto ya escrito; vos solo tocás enviar.</div>
+    <div class="row"><button type="button" class="primary" id="e-grupo">WhatsApp al grupo: fixture</button><button type="button" id="e-copiar">Copiar fixture</button></div>
+    <div id="e-lista"></div>
+    <div class="small" id="e-nota"></div>
+  </section>
   </div>
 
   <p class="proto">Prueba de la pantalla con datos reales leídos del PDF de la URBA. Los cambios que hagas acá no se guardan.</p>
@@ -649,6 +658,7 @@ function genInic(nombre, tomadas){
 /* ===== Paso 2: conductores ===== */
 const OTROS_POOLS = {MG:"Marcelo García (M16, ejemplo)"}; // iniciales ya usadas en otros pools del club
 let uid = 0;
+const HAY_AGENDA = !!(navigator.contacts && navigator.contacts.select);   // selector de contactos (Chrome en Android)
 const mk = (ini, as, nombre="") => ({id:++uid, nombre, ini, manual:true, asientos:as, tel:"", mail:""});
 const S2 = { drivers:[mk("AGC",7), mk("AM",9), mk("EDC",7), mk("RM",7), mk("LAF",7)], ejemplo:true };
 function tomadasPor(id){ // iniciales de las demás personas (este pool + otros pools)
@@ -684,6 +694,7 @@ function dibujarLista(){
         <label>Celular<input type="tel" data-k="tel" value="${esc(d.tel)}" autocomplete="off" placeholder="11 5555 1234"></label>
         <label>Email<input type="text" inputmode="email" data-k="mail" value="${esc(d.mail)}" autocomplete="off" placeholder="nombre@mail.com"></label>
       </div>
+      ${HAY_AGENDA ? `<div class="row"><button type="button" data-agenda="${d.id}">Elegir de la agenda del celular</button></div>` : ""}
     </div>`).join("");
   S2.drivers.forEach(pintarMsg); resumen2();
 }
@@ -712,6 +723,11 @@ $("lista").addEventListener("click", e => {
   if(b.dataset.mas){ const d = dd(b.dataset.mas); d.asientos = Math.min(12,d.asientos+1); S2.ejemplo=false; dibujarLista(); }
   else if(b.dataset.menos){ const d = dd(b.dataset.menos); d.asientos = Math.max(2,d.asientos-1); S2.ejemplo=false; dibujarLista(); }
   else if(b.dataset.quitar){ S2.drivers = S2.drivers.filter(x=>x.id!==+b.dataset.quitar); S2.ejemplo=false; dibujarLista(); }
+  else if(b.dataset.agenda){ const d = dd(b.dataset.agenda);
+    navigator.contacts.select(["name","tel","email"], {multiple:false}).then(r => { const c = r && r[0]; if(!c) return;
+      if(c.tel && c.tel[0]) d.tel = c.tel[0]; if(c.email && c.email[0]) d.mail = c.email[0];
+      if(!d.nombre && c.name && c.name[0]){ d.nombre = c.name[0]; if(!d.manual) d.ini = genInic(d.nombre, tomadasPor(d.id)); }
+      S2.ejemplo = false; dibujarLista(); }).catch(()=>{}); }
   else if(b.dataset.usar){ const [id,s] = b.dataset.usar.split("|"); const d = dd(id); d.ini = s; d.manual = true; S2.ejemplo=false; dibujarLista(); }
 });
 $("b-agregar2").addEventListener("click", () => { S2.drivers.push({id:++uid, nombre:"", ini:"", manual:false, asientos:7, tel:"", mail:""}); S2.ejemplo=false; S2.confirmado=false; $("ok2").hidden=true; dibujarLista();
@@ -937,6 +953,35 @@ $("b-optimizar").addEventListener("click", async () => {
 });
 function mostrarFalla(t){ estadoMotor(t); $("motor-estado").scrollIntoView({block:"center"}); }
 const fnum = (n,d=1) => Number(n).toFixed(d).replace(".",",");
+/* ===== Envío a los conductores ===== */
+function ctxSalidas(){
+  const v = S7.versiones.find(x=>x.id===S7.elegida); if(!v) return null;
+  return { equipo:`M${(DATA.divs[S.divIdx]||{}).cat||""} ${S.nombre||S.club}`.trim(), horario:(S.horario||"").replace(/\s*hs\.?$/i,""),
+    fechas: fechasJuego().map(f => { const sd = f.cond==="V" ? sedeDe(claveSede(f)) : null;
+      return { iso:f.iso, cond:f.cond, rival:f.rival, km:S5.km[claveSede(f)]||null, sede: sd ? {nombre:sd.nombre, dir:sd.dir} : null }; }),
+    asig: v.asig, conductores: S2.drivers.map(d => ({ini:d.ini, nombre:d.nombre, tel:d.tel, mail:d.mail})),
+    liquidacion: v.res.liquidacion_estacionamiento || null };
+}
+async function dibujarEnvio(){
+  const card = $("card-envio"); card.hidden = !S7.elegida; if(!S7.elegida) return;
+  if(!globalThis.Salidas) await cargarScripts(["vendor/salidas.js"]);
+  const X = globalThis.Salidas, ctx = ctxSalidas(), fx = X.fixtureTexto(ctx);
+  $("e-grupo").onclick = () => window.open(X.waGrupo(fx), "_blank");
+  $("e-copiar").onclick = async () => { try { await navigator.clipboard.writeText(fx); $("e-nota").textContent = "Fixture copiado."; } catch(e){ $("e-nota").textContent = "No se pudo copiar desde este navegador."; } };
+  $("e-lista").innerHTML = ctx.conductores.map((c,i) => {
+    const n = X.viajesDe(ctx, c.ini).length, txt = X.resumenConductor(ctx, c) + (n ? "\n\n" + fx : "");
+    const wa = X.telWA(c.tel);
+    return `<div class="card" style="margin:8px 0;padding:10px"><b>${esc(c.nombre||c.ini)}</b> <span class="small">(${esc(c.ini)}) · ${n} ${n===1?"viaje":"viajes"}</span>
+      <div class="row" style="margin-top:6px">${wa ? `<a class="btnlink" target="_blank" rel="noopener" href="${X.waLink(c.tel, txt)}">WhatsApp</a>` : `<span class="small">Falta un celular válido</span>`}
+      ${c.mail ? `<a class="btnlink" href="${X.mailLink(c.mail, "Pool "+ctx.equipo+": tus viajes", txt)}">Mail</a>` : `<span class="small">Sin mail</span>`}
+      ${n ? `<button type="button" data-ics="${i}">Calendario</button>` : ""}</div></div>`; }).join("");
+  $("e-lista").onclick = async e => { const b = e.target.closest("[data-ics]"); if(!b) return;
+    const c = ctx.conductores[+b.dataset.ics], nombre = `pool-${c.ini}.ics`, f = new File([X.ics(ctx, c)], nombre, {type:"text/calendar"});
+    try { if(navigator.canShare && navigator.canShare({files:[f]})){ await navigator.share({files:[f], title:"Pool "+ctx.equipo}); return; } } catch(err){ if(err && err.name==="AbortError") return; }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+    $("e-nota").textContent = "Calendario descargado: abrilo para importarlo, o adjuntalo al mensaje."; };
+  $("e-nota").textContent = $("e-nota").textContent || "WhatsApp y el mail no pueden adjuntar archivos solos: el botón Calendario lo comparte o lo descarga para que lo adjuntes.";
+}
 function dibujarPaso7(){
   const v = S7.versiones.find(x=>x.id===S7.activa); if(!v) return;
   $("vchips").innerHTML = S7.versiones.map(x => `<button type="button" class="vchip${S7.elegida===x.id?" elegida":""}" data-v="${x.id}" aria-pressed="${x.id===S7.activa}">${x.id}</button>`).join("");
@@ -960,8 +1005,8 @@ function dibujarPaso7(){
     </div>`;
   $("b-elegir").hidden = false; $("b-elegir").disabled = S7.elegida===v.id;
   $("b-elegir").textContent = S7.elegida===v.id ? "Versión elegida" : `Elegir ${v.id}`;
-  $("ok7").hidden = !S7.elegida;
-  if(S7.elegida) $("ok7").innerHTML = `Versión ${S7.elegida} elegida.<div class="next">Sigue: enviar a cada conductor su resumen, el fixture completo y el archivo de calendario (próxima etapa).</div>`;
+  $("ok7").hidden = !S7.elegida; dibujarEnvio();
+  if(S7.elegida) $("ok7").innerHTML = `Versión ${S7.elegida} elegida.<div class="next">Sigue: más abajo, enviar a cada conductor su resumen, el fixture completo y su calendario.</div>`;
 }
 $("vchips").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if(!b) return; S7.activa = b.dataset.v;
   const i = S7.versiones.findIndex(x=>x.id===S7.activa); S7.base = i>0 ? S7.versiones[i-1].id : null; dibujarPaso7(); });
