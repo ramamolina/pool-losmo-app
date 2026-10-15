@@ -360,9 +360,8 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
 
   <section class="card" aria-labelledby="h-autos">
     <h2 id="h-autos">Autos por fecha</h2>
-    <div class="small">En cada fecha hay un mínimo de autos: los que alcanzan para llevar a todos, usando primero los más grandes. Dejar que el motor sume autos reparte la carga entre más conductores, porque si solo manejan los de los autos grandes se cargan siempre los mismos.</div>
-      <div class="sw" data-sw="r-autos"><input type="checkbox" role="switch" id="r-autos" checked aria-labelledby="r-autos-t"><div class="tx"><b id="r-autos-t">Permitir más autos que el mínimo</b><span class="small">El motor decide cuántos autos va en cada fecha. Cada auto de más suma sus km y un día de pool a quien lo maneja.</span><div class="par"><label>Autos de más, como máximo, por fecha<select id="r-autos-n"><option value="1" selected>1 auto</option><option value="2">2 autos</option></select></label>
-        <label>Costo de cada auto de más (km de desparejo)<input type="text" inputmode="decimal" id="r-autos-cost" value="10"></label></div><div class="small">El costo evita sumar autos si no mejoran el reparto en al menos esos km. Con 0 el motor suma los autos que quiera.</div></div></div>
+    <div class="small">Cada auto hace el viaje completo y cuenta como un viaje para quien lo maneja. Los conductores se reparten km parejos; solo se suma un auto en una fecha cuando con los elegidos no alcanza para llevar a todos, mirando la capacidad de cada auto.</div>
+      <div class="sw" data-sw="r-autos"><input type="checkbox" role="switch" id="r-autos" checked aria-labelledby="r-autos-t"><div class="tx"><b id="r-autos-t">Solo los autos que hacen falta</b><span class="small">Prendido: el motor elige qué conductores van, y suma un auto solo si sin él quedarían chicos sin lugar (nunca un auto sobrante). Apagado: siempre el mínimo posible de autos, usando primero los más grandes (puede concentrar la carga en los mismos).</span></div></div>
   </section>
 
   <section class="card" aria-labelledby="h-pesos">
@@ -895,7 +894,7 @@ function armarEntrada(){
   const reglas = { disponibilidad:$("r-disp").checked, sin_fines_consecutivos:$("r-cons").checked,
     viajes_parejos:$("r-par").checked, max_dif_viajes:parseInt($("r-par-n").value,10),
     compensar_viaje_extra:$("r-comp").checked, viaje_extra_a: $("r-extra").checked ? $("r-extra-a").value : null,
-    autos_extra: $("r-autos").checked ? parseInt($("r-autos-n").value,10) : 0, costo_auto_extra_km: $("r-autos").checked ? num("r-autos-cost",0) : 0 };
+    autos_modo: $("r-autos").checked ? "estricto" : "minimo" };
   let baseId = null;
   if(!$("card-base").hidden && $("r-base").checked){
     const v = S7.versiones.find(x => x.id===$("r-base-v").value);
@@ -969,7 +968,7 @@ $("b-volver7").addEventListener("click", () => irPaso(6));
 
 
 /* ===== Guardar y abrir una copia del trabajo (archivo .json) ===== */
-const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-extra","r-extra-a","r-autos","r-autos-n","r-autos-cost","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","p-dpm","p-dpm-km","r-base","r-base-v","r-base-tol"];
+const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-extra","r-extra-a","r-autos","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","p-dpm","p-dpm-km","r-base","r-base-v","r-base-tol"];
 let pasoActual = 1;
 function instantanea(){
   const ctl = {}; CTRL6.forEach(id => { const e = $(id); ctl[id] = e.type==="checkbox" ? e.checked : e.value; });

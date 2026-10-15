@@ -17,8 +17,8 @@ REGLAS_BASE = {
     "viaje_extra_a": None,          # id de conductor al que se le fija el viaje extra (o None: elige el motor)
     "minimizar_cambios_vs": None,   # lista de choferes (uno por partido) de la versión anterior: cambiar lo mínimo
     "tolerancia_km": 0,             # cuánto se acepta empeorar la diferencia de carga para cambiar menos fechas
-    "autos_extra": 0,               # autos que el motor puede sumar sobre el mínimo que alcanza en cada fecha
-    "costo_auto_extra_km": 0,       # cuánto "cuesta" (en km de diferencia) cada auto que se suma
+    "autos_modo": "estricto",       # "estricto": los autos de cada fecha alcanzan y ninguno sobra (el motor elige qué conductores,
+                                    #   con sus distintas capacidades); "minimo": siempre el mínimo de autos, usando los más grandes
 }
 
 # Parámetros de la temporada (se cargan en la pantalla de parámetros de la app)
@@ -93,7 +93,8 @@ def autos_por_fecha(datos, reglas=None):
 
 def optimizar(datos, reglas=None, params=None):
     """Un conductor o más por fecha: cada auto que sale lleva sus asientos - 1 chicos y hace el viaje completo.
-    La cantidad de autos de cada fecha la decide el motor entre el mínimo que alcanza y el mínimo + `autos_extra`."""
+    Modo "estricto": el conjunto de autos de cada fecha alcanza para todos los chicos y ninguno sobra (si se saca
+    cualquiera, ya no alcanza); la cantidad sale de qué conductores se elijan, según sus capacidades."""
     r = {**REGLAS_BASE, **(reglas or {})}
     P, C = datos["partidos"], datos["conductores"]
     nP, nC = len(P), len(C)
@@ -101,13 +102,13 @@ def optimizar(datos, reglas=None, params=None):
     caps = [c["asientos"] - 1 for c in C]
     km = cargas(datos, params)
     loc = [1 if p["cond"] == "L" else 0 for p in P]
-    extra = int(r["autos_extra"] or 0)
-    lam = float(r["costo_auto_extra_km"] or 0)
     minimos = autos_por_fecha(datos, r)
     if any(m is None for m in minimos):
         return None
     disp = [[not (r["disponibilidad"] and P[m]["fecha"] in C[c]["no_disponible"]) for c in range(nC)] for m in range(nP)]
-    maxa = [min(minimos[m] + extra, sum(disp[m]), kids) for m in range(nP)]
+    estricto = r["autos_modo"] == "estricto"
+    maxa = [min(sum(disp[m]), kids) if estricto else minimos[m] for m in range(nP)]
+    Mcap = sum(caps)
 
     # variables: x[m,c] (nP*nC) | Kmax | Kmin | nmin | y[c] (nC)
     ix = lambda m, c: m * nC + c
@@ -131,6 +132,8 @@ def optimizar(datos, reglas=None, params=None):
         for c in range(nC):
             if not disp[m][c]:
                 ub[ix(m, c)] = 0
+            elif estricto:   # ningún auto sobra: sin este, el resto no alcanza (capacidad total - la de c <= chicos - 1 si c sale)
+                add([(ix(m, e), caps[e]) for e in range(nC) if e != c] + [(ix(m, c), Mcap)], -np.inf, kids - 1 + Mcap)
     if r["sin_fines_consecutivos"]:
         for m in range(nP - 1):
             if (P[m + 1]["fecha"] - P[m]["fecha"]).days == 7:
@@ -162,15 +165,12 @@ def optimizar(datos, reglas=None, params=None):
 
     A = np.array(rows); cons_lo, cons_hi = np.array(lo), np.array(hi)
     cobj = np.zeros(nv); cobj[iKmax], cobj[iKmin] = 1, -1
-    for m in range(nP):          # cada auto de más cuesta lam km equivalentes de diferencia
-        for c in range(nC):
-            cobj[ix(m, c)] += lam
     res = milp(cobj, constraints=LinearConstraint(A, cons_lo, cons_hi),
                integrality=integrality, bounds=Bounds(lb, ub))
     if res.status != 0:
         return None
     dif = res.fun
-    # etapa 2: con ese costo (más la tolerancia), bajar el máximo de carga o,
+    # etapa 2: con esa diferencia (más la tolerancia), bajar el máximo de carga o,
     # si se pidió, cambiar lo mínimo respecto de la versión anterior
     ids = [k["id"] for k in C]
     cobj2 = np.zeros(nv)
