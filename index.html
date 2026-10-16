@@ -365,7 +365,6 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
       <div class="sw" data-sw="r-cons"><input type="checkbox" role="switch" id="r-cons" checked aria-labelledby="r-cons-t"><div class="tx"><b id="r-cons-t">Sin fines de semana consecutivos</b><span class="small">Nadie maneja dos fines de semana calendario seguidos. Cuenta la fecha real, no el número de fecha.</span></div></div>
       <div class="sw" data-sw="r-par"><input type="checkbox" role="switch" id="r-par" checked aria-labelledby="r-par-t"><div class="tx"><b id="r-par-t">Viajes parejos</b><span class="small">Limita la diferencia de cantidad de viajes entre conductores.</span><div class="par"><label>Diferencia máxima de viajes<select id="r-par-n"><option value="1" selected>1 viaje</option><option value="2">2 viajes</option><option value="3">3 viajes</option></select></label></div></div></div>
       <div class="sw" data-sw="r-comp"><input type="checkbox" role="switch" id="r-comp" checked aria-labelledby="r-comp-t"><div class="tx"><b id="r-comp-t">Compensar al del viaje extra</b><span class="small">Quien hace más viajes que el mínimo tiene mayoría de partidos de local.</span></div></div>
-      <div class="sw off" data-sw="r-extra"><input type="checkbox" role="switch" id="r-extra" aria-labelledby="r-extra-t"><div class="tx"><b id="r-extra-t">Fijar quién hace el viaje extra</b><span class="small">Si sobra un viaje, elegís a quién le toca. Apagado: lo elige la app.</span><div class="par"><label>Conductor<select id="r-extra-a"></select></label></div></div></div>
   </section>
 
   <section class="card" aria-labelledby="h-autos">
@@ -891,7 +890,6 @@ function actualizarPaso6(){
   document.querySelectorAll("#paso6 .sw[data-sw]").forEach(sw => sw.classList.toggle("off", !sw.querySelector("input[type=checkbox]").checked));
   const kmEq = num("p-park-pesos",0)/Math.max(1,num("p-park-nafta",1))*num("p-park-kml",0);
   $("p-park-eq").textContent = `Equivale a ${kmEq.toFixed(1).replace(".",",")} km por partido de visitante.`;
-  $("r-extra-a").innerHTML = S2.drivers.map(d => `<option value="${esc(ini(d))}">${esc(ini(d))}</option>`).join("");
   $("card-base").hidden = !S7.versiones.length;
   $("r-base-v").innerHTML = S7.versiones.map(v => `<option value="${v.id}">${v.id}</option>`).join("");
   $("prop-lista").innerHTML = S6.propias.map((t,i)=>`<li><span>${esc(t)}</span><button type="button" class="rm" data-quitar-prop="${i}">Quitar</button></li>`).join("");
@@ -909,7 +907,7 @@ function armarEntrada(){
   const fs = fechasJuego(), ds = S2.drivers;
   const reglas = { disponibilidad:$("r-disp").checked, sin_fines_consecutivos:$("r-cons").checked,
     viajes_parejos:$("r-par").checked, max_dif_viajes:parseInt($("r-par-n").value,10),
-    compensar_viaje_extra:$("r-comp").checked, viaje_extra_a: $("r-extra").checked ? $("r-extra-a").value : null,
+    compensar_viaje_extra:$("r-comp").checked,
     autos_modo: $("r-autos").checked ? "estricto" : "minimo" };
   let baseId = null;
   if(!$("card-base").hidden && $("r-base").checked){
@@ -1011,7 +1009,7 @@ $("b-volver7").addEventListener("click", () => irPaso(6));
 
 
 /* ===== Guardar y abrir una copia del trabajo (archivo .json) ===== */
-const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-extra","r-extra-a","r-autos","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","r-base","r-base-v","r-base-tol"];
+const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-autos","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","r-base","r-base-v","r-base-tol"];
 let pasoActual = 1;
 function instantanea(){
   const ctl = {}; CTRL6.forEach(id => { const e = $(id); ctl[id] = e.type==="checkbox" ? e.checked : e.value; });
