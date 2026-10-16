@@ -19,6 +19,8 @@ def bullets(res, base_id=None):
         b.append("Autos por fecha: solo los que hacen falta para llevar a todos (según la capacidad de cada auto)")
     else:
         b.append("Autos por fecha: siempre el mínimo posible, usando primero los más grandes")
+    if r.get("repartir_en_el_tiempo"):
+        b.append(f"Cada conductor reparte sus viajes en meses distintos, en la medida de lo posible (acepta hasta {_f(r.get('tolerancia_tiempo_km') or 0)} km más de diferencia)")
     if r["viaje_extra_a"]: b.append(f"Viaje extra fijado a {r['viaje_extra_a']}")
     if p["estacionamiento_en_km"]:
         b.append(f"Estacionamiento convertido a {_f(engine.km_estacionamiento(p))} km por partido de visitante")
@@ -76,6 +78,7 @@ INTERRUPTORES = {
     "viajes_parejos": "Viajes parejos",
     "compensar_viaje_extra": "Compensar al del viaje extra (mayoría de local)",
     "viaje_extra_a": "Viaje extra fijado a un conductor",
+    "repartir_en_el_tiempo": "Repartir los viajes en el tiempo (meses distintos)",
 }
 
 def costos_interruptores(datos, reglas=None, params=None):

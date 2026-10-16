@@ -367,6 +367,12 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
       <div class="sw" data-sw="r-comp"><input type="checkbox" role="switch" id="r-comp" checked aria-labelledby="r-comp-t"><div class="tx"><b id="r-comp-t">Compensar al del viaje extra</b><span class="small">Quien hace más viajes que el mínimo tiene mayoría de partidos de local.</span></div></div>
   </section>
 
+  <section class="card" id="card-nuevas" aria-labelledby="h-nuevas">
+    <h2 id="h-nuevas">Reglas nuevas</h2>
+    <div class="small">Reglas que se sumaron a pedido. Mientras tienen la etiqueta "a validar", arrancan apagadas: prendelas, corré la optimización y fijate si hace lo que querías; si es así, tocá "Confirmar regla".</div>
+    <div id="nuevas-lista"></div>
+  </section>
+
   <section class="card" aria-labelledby="h-autos">
     <h2 id="h-autos">Autos por fecha</h2>
     <div class="small">Cada auto hace el viaje completo y cuenta como un viaje para quien lo maneja. Los conductores se reparten km parejos; solo se suma un auto en una fecha cuando con los elegidos no alcanza para llevar a todos, mirando la capacidad de cada auto.</div>
@@ -886,6 +892,24 @@ function prepararMotor(){
 /* ===== Paso 6: reglas ===== */
 const S6 = { propias:[] };
 const num = (id, def=0) => { const v = parseFloat(String($(id).value).replace(",",".")); return isFinite(v) ? v : def; };
+/* Reglas nuevas: se suman a pedido (texto libre de Rama). Cada una arranca apagada y "a validar" hasta que se confirma desde acá. */
+const REGLAS_NUEVAS = [
+  { id:"tiempo", sw:"r-tiempo", titulo:"Repartir los viajes en el tiempo",
+    desc:"En la medida de lo posible, cada conductor maneja en meses distintos: evita que alguien junte dos viajes en un mismo mes mientras otro pasa meses sin manejar.",
+    param:{id:"r-tiempo-km", label:"Hasta cuántos km más de diferencia de carga aceptás para lograrlo", valor:"20"},
+    pedido:"Que en la medida de lo posible los conductores hagan al menos 1 viaje al mes, o que estén medianamente repartidos a lo largo del calendario.",
+    interp:"Como hay menos viajes que casillas conductor-mes (por ejemplo, 17 viajes para 7 conductores en 4 meses), no todos pueden manejar todos los meses; la regla busca que los viajes de cada uno caigan en meses distintos. Solo empeora el reparto de km si hace falta, y nunca más que el tope que pongas." }
+];
+const OKREG_KEY = "poollosmo.reglasok";
+const regOk = () => { try { return JSON.parse(localStorage.getItem(OKREG_KEY) || "{}"); } catch(e){ return {}; } };
+$("nuevas-lista").innerHTML = REGLAS_NUEVAS.map(g => `<div class="sw off" data-sw="${g.sw}"><input type="checkbox" role="switch" id="${g.sw}" aria-labelledby="${g.sw}-t"><div class="tx"><b id="${g.sw}-t">${g.titulo}</b> <span class="badge" data-badge="${g.id}">Nueva · a validar</span><span class="small">${g.desc}</span>
+  <div class="par"><label>${g.param.label}<input type="text" inputmode="decimal" id="${g.param.id}" value="${g.param.valor}"></label></div>
+  <div class="small" data-val="${g.id}"><b>Tu pedido:</b> «${g.pedido}»<br><b>Cómo lo interpreté:</b> ${g.interp}</div>
+  <div class="row" data-val="${g.id}"><button type="button" data-confirmar-regla="${g.id}">Confirmar regla</button></div></div></div>`).join("");
+function pintarNuevas(){ const ok = regOk(); REGLAS_NUEVAS.forEach(g => document.querySelectorAll(`[data-val="${g.id}"],[data-badge="${g.id}"]`).forEach(e => e.hidden = !!ok[g.id])); }
+$("nuevas-lista").addEventListener("click", e => { const b = e.target.closest("[data-confirmar-regla]"); if(!b) return;
+  const o = regOk(); o[b.dataset.confirmarRegla] = true; try { localStorage.setItem(OKREG_KEY, JSON.stringify(o)); } catch(err){} pintarNuevas(); });
+pintarNuevas();
 function actualizarPaso6(){
   document.querySelectorAll("#paso6 .sw[data-sw]").forEach(sw => sw.classList.toggle("off", !sw.querySelector("input[type=checkbox]").checked));
   const kmEq = num("p-park-pesos",0)/Math.max(1,num("p-park-nafta",1))*num("p-park-kml",0);
@@ -908,7 +932,8 @@ function armarEntrada(){
   const reglas = { disponibilidad:$("r-disp").checked, sin_fines_consecutivos:$("r-cons").checked,
     viajes_parejos:$("r-par").checked, max_dif_viajes:parseInt($("r-par-n").value,10),
     compensar_viaje_extra:$("r-comp").checked,
-    autos_modo: $("r-autos").checked ? "estricto" : "minimo" };
+    autos_modo: $("r-autos").checked ? "estricto" : "minimo",
+    repartir_en_el_tiempo: $("r-tiempo").checked, tolerancia_tiempo_km: num("r-tiempo-km",20) };
   let baseId = null;
   if(!$("card-base").hidden && $("r-base").checked){
     const v = S7.versiones.find(x => x.id===$("r-base-v").value);
@@ -980,7 +1005,7 @@ function dibujarPaso7(){
   $("vchips").innerHTML = S7.versiones.map(x => `<button type="button" class="vchip${S7.elegida===x.id?" elegida":""}" data-v="${x.id}" aria-pressed="${x.id===S7.activa}">${x.id}</button>`).join("");
   const baseV = S7.versiones.find(x=>x.id===S7.base && x.id!==v.id);
   const sel = S7.versiones.length>1 ? `<label style="max-width:260px">Comparar con<select id="sel-base"><option value="">Sin comparar</option>${S7.versiones.filter(x=>x.id!==v.id).map(x=>`<option value="${x.id}"${baseV&&baseV.id===x.id?" selected":""}>${x.id}</option>`).join("")}</select></label>` : "";
-  const fs = fechasJuego(), ds = S2.drivers, r = v.res;
+  const fs = fechasJuego(), ds = S2.drivers, r = v.res, tiempo = !!(r.reglas && r.reglas.repartir_en_el_tiempo && r.meses);
   const cambios = baseV ? fs.filter(f => baseV.asig[f.iso]!==v.asig[f.iso]).length : 0;
   $("res-estado").textContent = `${v.id}${S7.elegida===v.id?" · elegida":""}`;
   $("res-detalle").innerHTML = `
@@ -991,8 +1016,9 @@ function dibujarPaso7(){
     <div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Cond.</th><th>Rival</th><th class="c">Km</th><th>Maneja</th><th>No podían</th></tr></thead><tbody>${fs.map(f => {
       const a = v.asig[f.iso], cam = baseV && baseV.asig[f.iso]!==a;
       return `<tr><td class="date">${fmt(f.iso)}</td><td><span class="pill ${f.cond}">${f.cond}</span></td><td>${esc(f.rival)}</td><td class="num">${fnum(S5.km[claveSede(f)])}</td><td class="${cam?"cambio":""}"><span class="cond">${esc(a)}</span>${cam?` <span class="small">(era ${esc(baseV.asig[f.iso])})</span>`:""}</td><td class="nopod">${ds.filter(d=>noPuede(d.id,f.iso)).map(d=>esc(ini(d))).join(", ")}</td></tr>`; }).join("")}</tbody></table></div>
-    <div class="tablewrap"><table><thead><tr><th>Conductor</th><th class="c">Viajes</th><th class="c">L / V</th><th class="c">Km</th><th class="c">Carga</th></tr></thead><tbody>${Object.entries(r.por_conductor).map(([k,o]) =>
-      `<tr><td><span class="cond">${esc(k)}</span></td><td class="num">${o.viajes}</td><td class="num">${o.locales} / ${o.visitante}</td><td class="num">${fnum(o.km)}</td><td class="num">${fnum(o.carga_km)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="tablewrap"><table><thead><tr><th>Conductor</th><th class="c">Viajes</th><th class="c">L / V</th><th class="c">Km</th><th class="c">Carga</th>${tiempo ? '<th class="c">Meses</th>' : ""}</tr></thead><tbody>${Object.entries(r.por_conductor).map(([k,o]) =>
+      `<tr><td><span class="cond">${esc(k)}</span></td><td class="num">${o.viajes}</td><td class="num">${o.locales} / ${o.visitante}</td><td class="num">${fnum(o.km)}</td><td class="num">${fnum(o.carga_km)}</td>${tiempo ? `<td class="num">${o.meses_con_viaje} de ${r.meses.total}</td>` : ""}</tr>`).join("")}</tbody></table></div>
+    ${tiempo ? `<div class="alert info"><b>Repartir en el tiempo:</b> ${r.meses.repetidos===0 ? "ningún conductor repite mes." : `${r.meses.repetidos} caso${r.meses.repetidos>1?"s":""} de un conductor con dos viajes en el mismo mes (no se pudo evitar con el tope de km que pusiste).`}${regOk().tiempo ? "" : " Si es lo que pediste, confirmá la regla en el paso Reglas."}</div>` : ""}
     <div class="small">Diferencia entre el que más y el que menos carga: <b>${fnum(r.dif_km)} km</b>.</div>
     ${r.liquidacion_estacionamiento ? `<div><b>Estacionamiento a repartir</b><div class="small">Cada fecha de visitante se divide entre todos los conductores. Positivo: recibe; negativo: paga.</div><div class="chips" style="margin-top:6px">${Object.entries(r.liquidacion_estacionamiento).map(([k,m])=>`<span class="chip">${esc(k)} ${m>=0?"+":"−"}$${Math.abs(m).toLocaleString("es-AR")}</span>`).join("")}</div></div>` : ""}
     </div>`;
@@ -1009,7 +1035,7 @@ $("b-volver7").addEventListener("click", () => irPaso(6));
 
 
 /* ===== Guardar y abrir una copia del trabajo (archivo .json) ===== */
-const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-autos","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","r-base","r-base-v","r-base-tol"];
+const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-autos","r-tiempo","r-tiempo-km","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","r-base","r-base-v","r-base-tol"];
 let pasoActual = 1;
 function instantanea(){
   const ctl = {}; CTRL6.forEach(id => { const e = $(id); ctl[id] = e.type==="checkbox" ? e.checked : e.value; });

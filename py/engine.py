@@ -17,6 +17,8 @@ REGLAS_BASE = {
     "viaje_extra_a": None,          # id de conductor al que se le fija el viaje extra (o None: elige el motor)
     "minimizar_cambios_vs": None,   # lista de choferes (uno por partido) de la versión anterior: cambiar lo mínimo
     "tolerancia_km": 0,             # cuánto se acepta empeorar la diferencia de carga para cambiar menos fechas
+    "repartir_en_el_tiempo": False, # en la medida de lo posible, cada conductor reparte sus viajes en meses distintos
+    "tolerancia_tiempo_km": 20,     # cuánto se acepta empeorar la diferencia de carga (km) para repartir mejor en el tiempo
     "autos_modo": "estricto",       # "estricto": los autos de cada fecha alcanzan y ninguno sobra (el motor elige qué conductores,
                                     #   con sus distintas capacidades); "minimo": siempre el mínimo de autos, usando los más grandes
 }
@@ -104,11 +106,14 @@ def optimizar(datos, reglas=None, params=None):
     maxa = [min(sum(disp[m]), kids) if estricto else minimos[m] for m in range(nP)]
     Mcap = sum(caps)
 
-    # variables: x[m,c] (nP*nC) | Kmax | Kmin | nmin | y[c] (nC)
+    meses = sorted({(p["fecha"].year, p["fecha"].month) for p in P}); nM = len(meses)
+    mes_de = [meses.index((p["fecha"].year, p["fecha"].month)) for p in P]
+    # variables: x[m,c] (nP*nC) | Kmax | Kmin | nmin | y[c] (nC) | z[c,t] (nC*nM): el conductor c tiene algún viaje en el mes t
     ix = lambda m, c: m * nC + c
     iKmax, iKmin, iN = nP * nC, nP * nC + 1, nP * nC + 2
     iy = lambda c: nP * nC + 3 + c
-    nv = nP * nC + 3 + nC
+    iz = lambda c, t: nP * nC + 3 + nC + c * nM + t
+    nv = nP * nC + 3 + nC + nC * nM
     integrality = np.zeros(nv); integrality[:nP * nC] = 1; integrality[iN:] = 1
     lb, ub = np.zeros(nv), np.ones(nv)
     ub[iKmax] = ub[iKmin] = 1e6
@@ -157,6 +162,13 @@ def optimizar(datos, reglas=None, params=None):
         c = [k["id"] for k in C].index(r["viaje_extra_a"])
         add(ntot(c) + [(iN, -1)], 1, np.inf)
 
+    for c in range(nC):  # z[c,t] solo puede valer 1 si c maneja en ese mes; si la regla está apagada no se usa
+        for t in range(nM):
+            if r["repartir_en_el_tiempo"]:
+                add([(iz(c, t), 1)] + [(ix(m, c), -1) for m in range(nP) if mes_de[m] == t], -np.inf, 0)
+            else:
+                ub[iz(c, t)] = 0
+
     A = np.array(rows); cons_lo, cons_hi = np.array(lo), np.array(hi)
     cobj = np.zeros(nv); cobj[iKmax], cobj[iKmin] = 1, -1
     res = milp(cobj, constraints=LinearConstraint(A, cons_lo, cons_hi),
@@ -177,7 +189,23 @@ def optimizar(datos, reglas=None, params=None):
     else:
         cobj2[iKmax] = 1
     tol = r.get("tolerancia_km", 0) or 0
-    A2 = np.vstack([A, cobj]); lo2 = np.append(cons_lo, -np.inf); hi2 = np.append(cons_hi, dif + tol + 1e-6)
+    A2 = np.vstack([A, cobj]); lo2 = np.append(cons_lo, -np.inf); hi2 = np.append(cons_hi, dif + 1e-6)
+    if r["repartir_en_el_tiempo"]:
+        # 1) con la diferencia óptima más la tolerancia de tiempo, la mayor cantidad de pares conductor-mes con viaje
+        cz = np.zeros(nv)
+        for c in range(nC):
+            for t in range(nM): cz[iz(c, t)] = -1
+        hi_t = hi2.copy(); hi_t[-1] = dif + (r.get("tolerancia_tiempo_km", 0) or 0) + 1e-6
+        rz = milp(cz, constraints=LinearConstraint(A2, lo2, hi_t), integrality=integrality, bounds=Bounds(lb, ub))
+        zmax = round(-rz.fun)
+        # 2) logrado eso, lo menos que hay que empeorar la diferencia de carga (si ya se logra sin empeorar, queda en dif)
+        A3 = np.vstack([A, -cz]); lo3 = np.append(cons_lo, zmax - 1e-6); hi3 = np.append(cons_hi, np.inf)
+        r3 = milp(cobj, constraints=LinearConstraint(A3, lo3, hi3), integrality=integrality, bounds=Bounds(lb, ub))
+        dif = r3.fun
+        A2 = np.vstack([A, cobj, -cz]); lo2 = np.append(lo3, -np.inf); lo2 = np.concatenate([cons_lo, [-np.inf, zmax - 1e-6]])
+        hi2 = np.concatenate([cons_hi, [dif + tol + 1e-6, np.inf]])
+    else:
+        hi2[-1] = dif + tol + 1e-6
     res2 = milp(cobj2, constraints=LinearConstraint(A2, lo2, hi2),
                 integrality=integrality, bounds=Bounds(lb, ub))
     x = np.round(res2.x[:nP * nC]).astype(int).reshape(nP, nC)
@@ -207,7 +235,15 @@ def resumen(datos, asign, reglas=None, params=None, minimos=None):
                 for k in saldo: saldo[k] -= costo * len(grupo) / n
                 for a in grupo: saldo[a] += costo
         liquidacion = {k: round(v) for k, v in saldo.items()}  # + recibe, - paga
-    return {"liquidacion_estacionamiento": liquidacion, "asignacion": list(zip([p["fecha"].isoformat() for p in P], [" + ".join(g) for g in asign])),
+    meses_por = {c["id"]: {} for c in C}
+    for pa, grupo in zip(P, asign):
+        for a in grupo:
+            k = (pa["fecha"].year, pa["fecha"].month); meses_por[a][k] = meses_por[a].get(k, 0) + 1
+    for k, o in out.items():
+        o["meses_con_viaje"] = len(meses_por[k])
+    meses = {"total": len({(pa["fecha"].year, pa["fecha"].month) for pa in P}),
+             "repetidos": sum(1 for d in meses_por.values() for n in d.values() if n > 1)}  # pares conductor-mes con 2 o más viajes
+    return {"meses": meses, "liquidacion_estacionamiento": liquidacion, "asignacion": list(zip([p["fecha"].isoformat() for p in P], [" + ".join(g) for g in asign])),
             "autos": [len(g) for g in asign], "autos_minimos": minimos,
             "por_conductor": out, "dif_km": round(max(cs) - min(cs), 1),
             "reglas": reglas, "params": params}
