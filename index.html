@@ -382,7 +382,6 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
         <div class="eq" id="p-park-eq"></div></div></div>
       <div class="sw off" data-sw="p-dia"><input type="checkbox" role="switch" id="p-dia" aria-labelledby="p-dia-t"><div class="tx"><b id="p-dia-t">Un día de pool pesa por sí mismo</b><span class="small">Suma km equivalentes a cada fecha, por haber dedicado el día entero (de 6 a 8 horas).</span><div class="par"><label>Km equivalentes por día<input type="text" inputmode="decimal" id="p-dia-km" value="20"></label></div></div></div>
       <div class="sw off" data-sw="p-vis"><input type="checkbox" role="switch" id="p-vis" aria-labelledby="p-vis-t"><div class="tx"><b id="p-vis-t">Peso extra de visitante</b><span class="small">Suma km equivalentes a las fechas de visitante, además del estacionamiento.</span><div class="par"><label>Km extra por visitante<input type="text" inputmode="decimal" id="p-vis-km" value="10"></label></div></div></div>
-      <div class="sw off" data-sw="p-dpm"><input type="checkbox" role="switch" id="p-dpm" aria-labelledby="p-dpm-t"><div class="tx"><b id="p-dpm-t">Día del Padre y de la Madre</b><span class="small">Si cae un partido de local en esos días, pesa como un visitante. Dejalo vacío para que valga lo mismo que un visitante.</span><div class="par"><label>Km equivalentes (vacío = como visitante)<input type="text" inputmode="decimal" id="p-dpm-km" value=""></label></div><div class="small" id="p-dpm-info"></div></div></div>
   </section>
 
   <section class="card" aria-labelledby="h-prop">
@@ -892,8 +891,6 @@ function actualizarPaso6(){
   document.querySelectorAll("#paso6 .sw[data-sw]").forEach(sw => sw.classList.toggle("off", !sw.querySelector("input[type=checkbox]").checked));
   const kmEq = num("p-park-pesos",0)/Math.max(1,num("p-park-nafta",1))*num("p-park-kml",0);
   $("p-park-eq").textContent = `Equivale a ${kmEq.toFixed(1).replace(".",",")} km por partido de visitante.`;
-  const esp = S.esp.filter(e => fechasJuego().some(r => r.iso===e[1] && r.cond==="L"));
-  $("p-dpm-info").textContent = esp.length ? "Aplica a: " + esp.map(e=>`${e[0]} (${fmt(e[1])})`).join(", ") : "Este año no cae en ningún partido de local de este equipo.";
   $("r-extra-a").innerHTML = S2.drivers.map(d => `<option value="${esc(ini(d))}">${esc(ini(d))}</option>`).join("");
   $("card-base").hidden = !S7.versiones.length;
   $("r-base-v").innerHTML = S7.versiones.map(v => `<option value="${v.id}">${v.id}</option>`).join("");
@@ -923,9 +920,7 @@ function armarEntrada(){
     nafta_pesos_litro:num("p-park-nafta",2500), km_por_litro:num("p-park-kml",10),
     dia_pool_km: $("p-dia").checked ? num("p-dia-km",0) : 0,
     extra_visitante_km: $("p-vis").checked ? num("p-vis-km",0) : 0,
-    dia_padre_madre_km: ($("p-dpm").checked && String($("p-dpm-km").value).trim()!=="") ? num("p-dpm-km",0) : null,
-    fechas_especiales: $("p-dpm").checked ? S.esp.map(e=>e[1]) : [] };
-  // si el Día del Padre/Madre está apagado, ninguna fecha se trata distinto
+  };
   return { partidos: fs.map(r => ({fecha:r.iso, cond:r.cond, rival:r.rival, km_iv:S5.km[claveSede(r)]})),
     conductores: ds.map(d => ({id:ini(d), asientos:d.asientos, no_disponible: fs.filter(r=>noPuede(d.id,r.iso)).map(r=>r.iso)})),
     a_transportar:S4.max, reglas, params, base_id:baseId };
@@ -1016,7 +1011,7 @@ $("b-volver7").addEventListener("click", () => irPaso(6));
 
 
 /* ===== Guardar y abrir una copia del trabajo (archivo .json) ===== */
-const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-extra","r-extra-a","r-autos","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","p-dpm","p-dpm-km","r-base","r-base-v","r-base-tol"];
+const CTRL6 = ["r-disp","r-cons","r-par","r-par-n","r-comp","r-extra","r-extra-a","r-autos","p-park","p-park-pesos","p-park-nafta","p-park-kml","p-dia","p-dia-km","p-vis","p-vis-km","r-base","r-base-v","r-base-tol"];
 let pasoActual = 1;
 function instantanea(){
   const ctl = {}; CTRL6.forEach(id => { const e = $(id); ctl[id] = e.type==="checkbox" ? e.checked : e.value; });

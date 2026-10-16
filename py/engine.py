@@ -30,8 +30,6 @@ PARAMS_BASE = {
     "km_por_litro": 10,              # autonomía estándar
     "dia_pool_km": 0,                # km equivalentes de un día entero de pool
     "extra_visitante_km": 0,         # peso extra de visitante, además del estacionamiento
-    "dia_padre_madre_km": None,      # None: igual al peso de visitante (estacionamiento + extra)
-    "fechas_especiales": [],         # Día del Padre / de la Madre (lista de fechas ISO)
 }
 
 def km_estacionamiento(p):
@@ -42,15 +40,11 @@ def cargas(datos, params):
     p = {**PARAMS_BASE, **(params or {})}
     park = km_estacionamiento(p) if p["estacionamiento_en_km"] else 0.0
     peso_v = park + p["extra_visitante_km"]
-    dpm = peso_v if p["dia_padre_madre_km"] is None else p["dia_padre_madre_km"]
-    esp = {dt.date.fromisoformat(x) for x in p["fechas_especiales"]}
     out = []
     for m in datos["partidos"]:
         w = m["km_iv"] + p["dia_pool_km"]
         if m["cond"] == "V":
             w += peso_v
-        elif m["fecha"] in esp:
-            w += dpm
         out.append(w)
     return out
 
