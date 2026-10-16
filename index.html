@@ -337,6 +337,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
   <section class="card" aria-labelledby="h-ca">
     <h2 id="h-ca">Canchas</h2>
     <div class="small">Para cada cancha, buscala en Google Maps y confirmá la correcta con un clic. Queda guardada en el directorio de este navegador y se reutiliza en otros pools. Si no aparece, escribí otro texto o dejá la distancia a mano en la tabla de abajo.</div>
+    <div class="row"><button type="button" id="b-buscar-todas">Buscar todas las canchas sin confirmar</button></div>
     <div id="lista-sedes" style="display:flex;flex-direction:column;gap:10px"></div>
   </section>
 
@@ -850,7 +851,7 @@ function dibujarPaso5(){
   $("tabla-km").className = "edit";
   $("tabla-km").innerHTML = `<thead><tr><th>Cancha</th><th>Fechas</th><th>Km ida y vuelta</th><th>Estado</th></tr></thead><tbody>${ss.map(s => {
     const v = S5.km[s.clave], ok = v>0;
-    return `<tr><td>${esc(s.nombre)}</td><td class="date">${s.fechas.map(fmt).join(", ")}</td><td><input type="text" inputmode="decimal" class="km" data-sede="${esc(s.clave)}" value="${v===undefined?"":String(v).replace(".",",")}" aria-label="Kilómetros ${esc(s.nombre)}"></td><td><span class="est ${ok?"ok":"falta"}">${ok?"Cargada":"Falta"}</span></td></tr>`; }).join("")}</tbody>`;
+    return `<tr><td>${esc(s.nombre)}</td><td class="date">${s.fechas.map(fmt).join(", ")}</td><td><input type="text" inputmode="decimal" class="km" data-sede="${esc(s.clave)}" value="${v===undefined?"":String(v).replace(".",",")}" aria-label="Kilómetros ${esc(s.nombre)}"></td><td><span class="est ${ok?"ok":"falta"}">${ok?"Cargada":"Falta"}</span>${!ok && !sedeDe(s.clave) ? ` <a href="#" data-ir-sede="${esc(s.clave)}" class="small">Elegir cancha</a>` : ""}</td></tr>`; }).join("")}</tbody>`;
   const faltan = ss.filter(s => !(S5.km[s.clave]>0)).length;
   $("km-nota").textContent = faltan ? `Faltan ${faltan} distancia(s). Cargalas a mano o subí el Excel.` : `${ss.length} canchas con distancia.`;
   $("b-confirmar5").disabled = faltan>0;
@@ -1289,6 +1290,23 @@ $("lista-sedes").addEventListener("click", conMsg5(async e => {
     S5.sed[k] = v; dirGuardar(k, v); delete S5.res[k]; cambioKm(); dibujarSedes();
   }
 }));
+async function buscarPendientes(){
+  const pend = sedes().filter(s => !sedeDe(s.clave) && (S5.res[s.clave]===undefined || (typeof S5.res[s.clave]==="string" && S5.res[s.clave]!=="Buscando…")));
+  for(const s of pend){
+    S5.res[s.clave] = "Buscando…"; dibujarSedes();
+    try { S5.res[s.clave] = await (await mapas()).buscar(consultaSede(s), S5.ll); } catch(err){ S5.res[s.clave] = "No se pudo buscar: "+err.message; }
+    dibujarSedes();
+  }
+  return pend.length;
+}
+function verSede(k){ const el = document.querySelector(`#lista-sedes [data-sede="${CSS.escape(k)}"]`); if(el) el.scrollIntoView({behavior:"smooth", block:"center"}); }
+$("b-buscar-todas").addEventListener("click", conMsg5(async () => {
+  const n = await buscarPendientes();
+  msgPaso("aviso-proto5", n ? "Elegí la cancha correcta de cada club con un clic." : "No hay canchas pendientes de confirmar.");
+  const primera = sedes().find(s => !sedeDe(s.clave)); if(primera) verSede(primera.clave);
+}));
+document.addEventListener("click", e => { const a = e.target.closest("[data-ir-sede]"); if(!a) return; e.preventDefault();
+  const k = a.dataset.irSede; (async () => { try { if(S5.res[k]===undefined){ const s = sedes().find(x=>x.clave===k); S5.res[k]="Buscando…"; dibujarSedes(); S5.res[k] = await (await mapas()).buscar(consultaSede(s), S5.ll); dibujarSedes(); } } catch(err){ S5.res[k] = "No se pudo buscar: "+err.message; dibujarSedes(); } verSede(k); })(); });
 function conMsg5(f){ return async (...a) => { try { await f(...a); } catch(e){ msgPaso("aviso-proto5", "No se pudo: "+e.message); } }; }
 
 $("b-mapa").addEventListener("click", async () => {
@@ -1319,7 +1337,8 @@ $("b-calc5").addEventListener("click", conMsg5(async () => {
   const km = await (await mapas()).matriz(S5.ll, ok.map(x=>x.c)), sinRuta = [];
   ok.forEach((x,i) => { if(km[i]==null) sinRuta.push(x.s.nombre); else S5.km[x.s.clave] = Math.round(km[i]*2*10)/10; });
   S5.sembrado = true; cambioKm(); dibujarPaso5();
-  msgPaso("aviso-proto5", `Calculé ${ok.length-sinRuta.length} distancias (ida y vuelta, ruta más rápida).` + (faltan.length ? ` Faltan confirmar: ${faltan.map(x=>x.s.nombre).join(", ")}.` : "") + (sinRuta.length ? ` Google no encontró ruta a: ${sinRuta.join(", ")}.` : ""));
+  msgPaso("aviso-proto5", `Calculé ${ok.length-sinRuta.length} distancias (ida y vuelta, ruta más rápida).` + (faltan.length ? ` Faltan confirmar: ${faltan.map(x=>x.s.nombre).join(", ")}. Buscando sus canchas…` : "") + (sinRuta.length ? ` Google no encontró ruta a: ${sinRuta.join(", ")}.` : ""));
+  if(faltan.length){ await buscarPendientes(); msgPaso("aviso-proto5", `Calculé ${ok.length-sinRuta.length} distancias. Falta confirmar la cancha de: ${faltan.map(x=>x.s.nombre).join(", ")}. Elegí la correcta en la sección Canchas y volvé a calcular.` + (sinRuta.length ? ` Google no encontró ruta a: ${sinRuta.join(", ")}.` : "")); verSede(faltan[0].s.clave); }
 }));
 
 /* ===== Navegación entre pasos ===== */

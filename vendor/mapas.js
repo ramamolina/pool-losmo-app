@@ -11,24 +11,45 @@
     est[tipo] = (est[tipo] || 0) + 1; try { localStorage.setItem("poollosmo.gasto", JSON.stringify(est)); } catch (e) {}
   }
 
+  const dormir = ms => new Promise(r => setTimeout(r, ms));
   let cargando = null;
-  function cargar(clave) {
-    if (!clave) return Promise.reject(new Error("Falta la clave de Google Maps en la app."));
-    if (g.google && g.google.maps && g.google.maps.importLibrary) return Promise.resolve();
-    return cargando || (cargando = new Promise((ok, ko) => {
+  function cargarUnaVez(clave) {
+    return new Promise((ok, ko) => {
       const s = document.createElement("script");
       s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(clave)}&loading=async&v=weekly&language=es&region=AR`;
       g.gm_authFailure = () => { P.error = "Google rechazó la clave. Revisá en Google Cloud que la clave permita el sitio https://ramamolina.github.io/* y las 3 APIs (Maps JavaScript, Places New, Routes), y que la facturación esté activa."; P.alError && P.alError(P.error); };
-      s.async = true; s.onload = ok; s.onerror = () => { cargando = null; ko(new Error("No se pudo conectar con Google Maps.")); };
+      s.async = true; s.onload = ok; s.onerror = () => { s.remove(); ko(new Error("No se pudo conectar con Google Maps.")); };
       document.head.appendChild(s);
-    }));
+    });
+  }
+  function cargar(clave) {
+    if (!clave) return Promise.reject(new Error("Falta la clave de Google Maps en la app."));
+    if (g.google && g.google.maps && g.google.maps.importLibrary) return Promise.resolve();
+    return cargando || (cargando = (async () => {
+      let ultimo;
+      for (let i = 0; i < 3; i++) {                    // a veces la primera conexión falla y la segunda anda: se reintenta sola
+        try {
+          await cargarUnaVez(clave);
+          for (let k = 0; k < 50 && !(g.google && g.google.maps && g.google.maps.importLibrary); k++) await dormir(100);   // espera a que Google termine de armarse
+          if (g.google && g.google.maps && g.google.maps.importLibrary) return;
+          ultimo = new Error("Google Maps tardó en iniciar.");
+        } catch (e) { ultimo = e; }
+        await dormir(700 * (i + 1));
+      }
+      cargando = null; throw ultimo;
+    })());
+  }
+  async function lib(nombre) {                         // importLibrary con reintentos
+    let ultimo;
+    for (let i = 0; i < 3; i++) { try { return await g.google.maps.importLibrary(nombre); } catch (e) { ultimo = e; await dormir(600 * (i + 1)); } }
+    throw ultimo;
   }
 
   const P = {
     clave: "", error: "", alError: null,
     async buscar(texto, sesgo) {        // candidatos de lugar: [{id, nombre, dir, lat, lng}]
       await cargar(P.clave); contar("buscar");
-      const { Place } = await g.google.maps.importLibrary("places");
+      const { Place } = await lib("places");
       const req = { textQuery: texto, fields: ["id", "displayName", "formattedAddress", "location"], maxResultCount: 3, region: "ar", language: "es" };
       if (sesgo) req.locationBias = { center: { lat: sesgo.lat, lng: sesgo.lng }, radius: 50000 };
       const { places } = await Place.searchByText(req);
@@ -36,7 +57,7 @@
     },
     async referencia(ll) {              // nombre de lugar cercano + localidad + partido: "Cerca de X · Localidad, Partido"
       await cargar(P.clave); contar("buscar");
-      const { Place } = await g.google.maps.importLibrary("places");
+      const { Place } = await lib("places");
       const { places } = await Place.searchNearby({ fields: ["displayName", "formattedAddress", "addressComponents"],
         locationRestriction: { center: { lat: ll.lat, lng: ll.lng }, radius: 300 }, maxResultCount: 1, rankPreference: "DISTANCE", language: "es", region: "ar" });
       const p = (places || [])[0]; if (!p) return "";
@@ -48,11 +69,13 @@
     },
     async montarMapa(div, centro, alMover) {   // mapa con pin movible; devuelve {get()}
       await cargar(P.clave); contar("mapa");
-      const { Map } = await g.google.maps.importLibrary("maps");
-      const { AdvancedMarkerElement } = await g.google.maps.importLibrary("marker");
+      const { Map } = await lib("maps");
+      const { AdvancedMarkerElement } = await lib("marker");
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));   // que el cuadro ya tenga tamaño
       const c0 = centro || { lat: -34.5, lng: -58.5 };
       const mapa = new Map(div, { center: c0, zoom: centro ? 14 : 10, mapId: "DEMO_MAP_ID", gestureHandling: "greedy", streetViewControl: false, mapTypeControl: false });
       const pin = new AdvancedMarkerElement({ map: mapa, position: centro ? c0 : null, gmpDraggable: true });
+      g.google.maps.event.addListenerOnce(mapa, "idle", () => { g.google.maps.event.trigger(mapa, "resize"); mapa.setCenter(c0); });
       const poner = ll => { pin.position = ll; alMover && alMover({ lat: ll.lat, lng: ll.lng }); };
       mapa.addListener("click", e => poner({ lat: e.latLng.lat(), lng: e.latLng.lng() }));
       pin.addListener("dragend", () => { const p = pin.position; poner({ lat: p.lat, lng: p.lng }); });
@@ -64,7 +87,7 @@
       for (let i = 0; i < destinos.length; i += 25) {
         const lote = destinos.slice(i, i + 25);
         await cargar(P.clave); contar("matriz");
-        const { RouteMatrix } = await g.google.maps.importLibrary("routes");
+        const { RouteMatrix } = await lib("routes");
         const { matrix } = await RouteMatrix.computeRouteMatrix({
           origins: [{ lat: origen.lat, lng: origen.lng }], destinations: lote.map(d => ({ lat: d.lat, lng: d.lng })),
           travelMode: "DRIVING", fields: ["originIndex", "destinationIndex", "distanceMeters", "condition"] });
