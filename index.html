@@ -286,7 +286,8 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
     <h2 id="h-av">Avisos de otros pools</h2>
     <div class="small">Estos conductores ya están comprometidos en otro pool en fechas donde este equipo también juega. Decidí caso por caso si lo tomo como "no puede". Vale solo para esta optimización.</div>
     <div id="avisos" style="display:flex;flex-direction:column;gap:10px"></div>
-    <div class="small">Los compromisos de otros pools de esta prueba son un ejemplo inventado.</div>
+    <div class="small" id="otros-estado"></div>
+    <div class="row"><button type="button" id="b-otros">Revisar otros pools de mi Drive</button></div>
   </section>
 
   <section class="card" aria-labelledby="h-prev">
@@ -483,8 +484,10 @@ function cargarEquipo(){
   S.divIdx = +i; S.nombre = n; S.horario = d.h; S.esp = d.esp; S.notas = d.notas;
   S.rows = d.cal[n].map(r => ({n:r[0], iso:r[1], cond:r[2], rival:r[3], nota:r[4]}));
   S.editar = false; S.confirmado = false;
+  if(!esEjemploM17() && S5.ejemplo){ S5.km = {}; S5.sembrado = false; S5.ejemplo = false; S5.centro = ""; S5.confirmado = false; }   // los km de ejemplo son solo del M17 Los Molinos A
   render();
 }
+const esEjemploM17 = () => S.club==="Los Molinos" && S.divIdx!==null && DATA.divs[S.divIdx] && String(DATA.divs[S.divIdx].cat)==="17" && S.nombre==="Los Molinos A";
 
 
 /* ----- selector de club con búsqueda y × para sacar clubes de la lista ----- */
@@ -661,13 +664,17 @@ function genInic(nombre, tomadas){
 }
 
 /* ===== Paso 2: conductores ===== */
-const OTROS_POOLS = {MG:"Marcelo García (M16, ejemplo)"}; // iniciales ya usadas en otros pools del club
+let OTROS_POOLS = {}, OTROS_NOM = {};   // iniciales ya usadas en otros pools del club (se traen de tu Drive)
+const OTROS = { cargado:false, pools:0, total:0 };
+const normNom = t => String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z ]/g,"").replace(/\s+/g," ").trim();
 let uid = 0;
 const HAY_AGENDA = !!(navigator.contacts && navigator.contacts.select);   // selector de contactos (Chrome en Android)
 const mk = (ini, as, nombre="") => ({id:++uid, nombre, ini, manual:true, asientos:as, tel:"", mail:""});
 const S2 = { drivers:[mk("AGC",7), mk("AM",9), mk("EDC",7), mk("RM",7), mk("LAF",7)], ejemplo:true };
-function tomadasPor(id){ // iniciales de las demás personas (este pool + otros pools)
-  return [...S2.drivers.filter(d=>d.id!==id && d.ini).map(d=>d.ini), ...Object.keys(OTROS_POOLS)];
+function tomadasPor(id){ // iniciales de las demás personas (este pool + otros pools); la misma persona en otro pool (mismas iniciales, o mismo nombre) no cuenta como choque
+  const yo = S2.drivers.find(d=>d.id===id), mio = yo ? normNom(yo.nombre) : "";
+  return [...S2.drivers.filter(d=>d.id!==id && d.ini).map(d=>d.ini), ...Object.keys(OTROS_POOLS).filter(k => mio && OTROS_NOM[k] && OTROS_NOM[k]!==mio)];   // solo choca si ambos tienen nombre y es distinto
+  
 }
 function validar(d){
   const t = tomadasPor(d.id).map(x=>x.toUpperCase());
@@ -742,10 +749,7 @@ $("b-confirmar2").addEventListener("click", () => { S2.confirmado = true; resume
 
 
 /* ===== Paso 3: fechas no disponibles ===== */
-const COMPROMISOS = [ // EJEMPLO inventado: conductores ya comprometidos en otro pool
-  {ini:"RM",  iso:"2026-08-16", pool:"M16 (ejemplo)"},
-  {ini:"EDC", iso:"2026-10-11", pool:"M16 (ejemplo)"},
-  {ini:"LAF", iso:"2026-08-16", pool:"M16 (ejemplo)"}];
+let COMPROMISOS = [];   // {ini, iso, pool}: conductores ya comprometidos en otros pools de tu Drive (versión elegida de cada uno)
 const EJ_NO = {AGC:["2026-10-04"], AM:["2026-08-09","2026-09-13"], LAF:["2026-08-16","2026-09-06","2026-09-13","2026-09-27"]};
 const S3 = { no:new Set(), dec:{}, ejemplo:true, confirmado:false, sembrado:false };
 const k3 = (id,f) => id+"|"+f;
@@ -772,7 +776,8 @@ function dibujarPaso3(){
   $("badge-ej3").hidden = !S3.ejemplo;
   const av = avisosActivos(), ya = Object.keys(S3.dec).map(k=>k.split("|")).filter(([id,f])=>S3.dec[id+"|"+f]);
   const todos = COMPROMISOS.map(c=>({...c, d:S2.drivers.find(d=>ini(d)===c.ini)})).filter(c=>c.d && fechasJuego().some(r=>r.iso===c.iso) && (!S3.no.has(k3(c.d.id,c.iso))));
-  $("card-avisos").style.display = todos.length ? "" : "none";
+  $("otros-estado").textContent = !OTROS.cargado ? "Todavía no revisé tus otros pools. Tocá el botón para traer desde tu Drive las fechas en que cada conductor ya maneja."
+    : `Revisé ${OTROS.pools} ${OTROS.pools===1?"pool":"pools"} de tu Drive (solo cuentan los que tienen una versión elegida). ${todos.length ? "" : "Ningún conductor de este pool maneja en otro pool en las fechas de este equipo."}`;
   $("avisos").innerHTML = todos.map(c => { const k = k3(c.d.id,c.iso), dec = S3.dec[k]; return `<div class="aviso">
     <div><b>${esc(c.ini)}</b> ya maneja el ${fmtL(c.iso)} en ${esc(c.pool)}. Ese día este equipo juega ${esc(fechasJuego().find(r=>r.iso===c.iso).cond==="L"?"de local":"de visitante")}.</div>
     <div class="dec"><button type="button" class="${dec==="considerar"?"sel":""}" data-dec="${k}|considerar" aria-pressed="${dec==="considerar"}">Considerar: no puede</button>
@@ -793,6 +798,25 @@ $("b-confirmar3").addEventListener("click", () => { S3.confirmado = true; dibuja
   const n = S2.drivers.reduce((a,d)=>a+fechasJuego().filter(r=>noPuede(d.id,r.iso)).length,0);
   $("ok3").hidden = false; $("ok3").innerHTML = `Fechas confirmadas: ${n} imposibilidades en total.<div class="next">Sigue el paso 4: plantel (cuántos chicos hay que llevar).</div>`; });
 
+
+async function cargarOtrosPools(){
+  const r = await drive(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name contains 'Pool LosMo' and trashed=false")}&fields=files(id,name)&pageSize=50`);
+  const j = await r.json(), comp = [], otros = {}, nom = {}; let pools = 0;
+  for(const f of (j.files||[])){
+    if(f.id===DRIVE.id || f.name===nombreDrive()) continue;                 // este mismo pool no cuenta
+    let o; try { o = JSON.parse(await (await drive(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(f.id)}?alt=media`)).text()); } catch(e){ continue; }
+    if(!o || o.app!=="pool-losmo" || !o.fixture) continue;
+    pools++; const eq = `M${o.fixture.cat} ${o.fixture.nombre}`;
+    (o.conductores||[]).forEach(d => { const k = String(d.ini||"").toUpperCase(); if(k){ otros[k] = `${d.nombre||k} (${eq})`; nom[k] = normNom(d.nombre); } });
+    const v = (o.versiones||[]).find(x => x.id===o.elegida);
+    if(v) Object.entries(v.asig||{}).forEach(([iso,a]) => String(a).split("+").map(t=>t.trim()).filter(Boolean).forEach(k => comp.push({ini:k.toUpperCase(), iso, pool:eq})));
+  }
+  COMPROMISOS = comp; OTROS_POOLS = otros; OTROS_NOM = nom; OTROS.cargado = true; OTROS.pools = pools; OTROS.total = comp.length;
+}
+const driveListo = () => !!(DRIVE.tok && Date.now() < DRIVE.exp-60000);
+$("b-otros").addEventListener("click", async () => { $("otros-estado").textContent = "Revisando tu Drive…";
+  try { await cargarOtrosPools(); } catch(e){ $("otros-estado").textContent = "No se pudo revisar: "+e.message; return; }
+  dibujarPaso3(); if(typeof dibujarLista==="function") dibujarLista(); });
 
 /* ===== Paso 4: plantel ===== */
 const S4 = { max:6, ejemplo:true, confirmado:false };
@@ -845,7 +869,7 @@ function sedes(){ // [{clave, nombre, fechas[]}] en orden de aparición, la prop
 function dibujarPaso5(){
   dibujarSedes();
   $("centro-ll").textContent = S5.ll ? `Punto marcado en el mapa: ${S5.ref ? S5.ref + " (" : ""}${S5.ll.lat.toFixed(5)}, ${S5.ll.lng.toFixed(5)}${S5.ref ? ")" : ""}` : "Todavía no marcaste el punto en el mapa (hace falta para calcular con Google Maps).";
-  if(!S5.sembrado){ S5.sembrado = true; sedes().forEach(s => { const v = kmEjemplo(s.clave); if(v!==undefined) S5.km[s.clave] = v; }); }
+  if(!S5.sembrado){ S5.sembrado = true; if(S5.ejemplo && esEjemploM17()) sedes().forEach(s => { const v = kmEjemplo(s.clave); if(v!==undefined) S5.km[s.clave] = v; }); }
   $("centro").value = S5.centro; $("badge-ej5").hidden = !S5.ejemplo;
   const ss = sedes();
   $("tabla-km").className = "edit";
@@ -977,7 +1001,8 @@ function ctxSalidas(){
   const v = S7.versiones.find(x=>x.id===S7.elegida); if(!v) return null;
   return { equipo:`M${(DATA.divs[S.divIdx]||{}).cat||""} ${S.nombre||S.club}`.trim(), horario:(S.horario||"").replace(/\s*hs\.?$/i,""),
     fechas: fechasJuego().map(f => { const sd = f.cond==="V" ? sedeDe(claveSede(f)) : null;
-      return { iso:f.iso, cond:f.cond, rival:f.rival, km:S5.km[claveSede(f)]||null, sede: sd ? {nombre:sd.nombre, dir:sd.dir} : null }; }),
+      return { iso:f.iso, cond:f.cond, rival:f.rival, km:S5.km[claveSede(f)]||null, sede: sd ? {nombre:sd.nombre, dir:sd.dir} : null,
+        nopodian: S2.drivers.filter(d => noPuede(d.id, f.iso)).map(d => d.ini) }; }),
     asig: v.asig, conductores: S2.drivers.map(d => ({ini:d.ini, nombre:d.nombre, tel:d.tel, mail:d.mail})),
     liquidacion: v.res.liquidacion_estacionamiento || null };
 }
@@ -1377,6 +1402,7 @@ function irPaso(n){
   $("nav-atras").textContent = n>1 ? `‹ ${PASOS[n-2]}` : "‹ Atrás";
   $("steplabel").innerHTML = `Paso ${n} de 7 · <b>${PASOS[n-1]}</b> <span class="small">${n<7?"(sigue: "+PASOS[n].toLowerCase()+")":""}</span>`;
   $("titulo-paso").textContent = TITULOS[n-1];
+  if((n===2 || n===3) && !OTROS.cargado && driveListo()) cargarOtrosPools().then(() => { if(pasoActual===3) dibujarPaso3(); else if(pasoActual===2) dibujarLista(); }).catch(()=>{});
   if(n===2) dibujarLista();
   if(n===3) dibujarPaso3();
   if(n===4) dibujarPaso4();

@@ -29,12 +29,13 @@
     return "";
   }
 
+  const nom = (ctx, ini) => { const c = ctx.conductores.find(x => x.ini === ini); return c && c.nombre ? c.nombre.split(" ")[0] : ini; };
+  const noPod = (ctx, f) => (f.nopodian && f.nopodian.length) ? ` · no podían: ${f.nopodian.map(i => nom(ctx, i)).join(", ")}` : "";
   const viajesDe = (ctx, ini) => ctx.fechas.filter(f => quienes(ctx.asig[f.iso]).includes(ini));
   const sedeTxt = f => f.cond === "L" ? "Local (en el club)" : "Visitante" + (f.sede ? " en " + f.sede.nombre + (f.sede.dir && f.sede.dir !== f.sede.nombre ? ", " + f.sede.dir : "") : "");
 
   function fixtureTexto(ctx) {
-    const nom = ini => { const c = ctx.conductores.find(x => x.ini === ini); return c && c.nombre ? c.nombre.split(" ")[0] : ini; };
-    const lin = ctx.fechas.map(f => `${fechaC(f.iso)} · ${f.cond === "L" ? "Local" : "Visitante"} vs ${f.rival} → ${quienes(ctx.asig[f.iso]).map(nom).join(" + ") || "sin asignar"}`);
+    const lin = ctx.fechas.map(f => `${fechaC(f.iso)} · ${f.cond === "L" ? "Local" : "Visitante"} vs ${f.rival} → ${quienes(ctx.asig[f.iso]).map(i => nom(ctx, i)).join(" + ") || "sin asignar"}${noPod(ctx, f)}`);
     return `*Pool ${ctx.equipo}* (${ctx.horario} hs)\n` + lin.join("\n");
   }
 
@@ -44,7 +45,7 @@
     const km = v.reduce((s, f) => s + (f.km || 0), 0);
     const lin = v.map(f => {
       const cos = quienes(ctx.asig[f.iso]).filter(x => x !== c.ini);
-      return `• ${fechaL(f.iso)} · vs ${f.rival} · ${sedeTxt(f)}${f.km ? " (" + km1(f.km) + " km)" : ""}${cos.length ? " · con " + cos.join(" y ") : ""}`;
+      return `• ${fechaL(f.iso)} · vs ${f.rival} · ${sedeTxt(f)}${f.km ? " (" + km1(f.km) + " km)" : ""}${cos.length ? " · con " + cos.join(" y ") : ""}${noPod(ctx, f)}`;
     });
     let t = `Hola ${nombre}! Estos son tus viajes del pool ${ctx.equipo} (partidos ${ctx.horario} hs):\n` + lin.join("\n") +
       `\nTotal: ${v.length} ${v.length === 1 ? "viaje" : "viajes"}${km ? ", " + km1(km) + " km" : ""}.`;
