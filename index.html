@@ -385,7 +385,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
 
   <section class="card" aria-labelledby="h-prop">
     <h2 id="h-prop">Restricciones propias</h2>
-    <div class="small">Si necesitás una regla que no está en la lista, escribila con tus palabras. Esta versión todavía no la aplica al cálculo, pero queda anotada para que se incorpore en una versión futura.</div>
+    <div class="small">Si necesitás una regla que no está en la lista, escribila con tus palabras. No cambia el cálculo por sí sola: se la mandás a quien desarrolla la app (botón de abajo), que la convierte en una regla con su interruptor y la suma a esta lista para los próximos pools.</div>
     <textarea id="prop-txt" aria-label="Restricción propia" placeholder="Ej: que AGC no maneje el partido contra Newman"></textarea>
     <div class="row"><button type="button" id="b-prop">Agregar restricción</button></div>
     <ul class="propias" id="prop-lista" style="list-style:none;margin:0;padding:0"></ul>
@@ -894,7 +894,7 @@ function actualizarPaso6(){
   $("r-base-v").innerHTML = S7.versiones.map(v => `<option value="${v.id}">${v.id}</option>`).join("");
   $("prop-lista").innerHTML = S6.propias.map((t,i)=>`<li><span>${esc(t)}</span><button type="button" class="rm" data-quitar-prop="${i}">Quitar</button></li>`).join("");
   const mb = $("b-prop-mail"); mb.hidden = !S6.propias.length;
-  mb.href = "mailto:?subject=" + encodeURIComponent("Pool LosMo: restricciones propias") + "&body=" + encodeURIComponent(S6.propias.map((t,i)=>`${i+1}. ${t}`).join("\n"));
+  mb.href = "mailto:?subject=" + encodeURIComponent("Pool LosMo: restricciones propias") + "&body=" + encodeURIComponent(`Equipo: ${S.nombre ? "M"+((DATA.divs[S.divIdx]||{}).cat||"")+" "+S.nombre : "(sin elegir)"}\n\n` + S6.propias.map((t,i)=>`${i+1}. ${t}`).join("\n"));
   if(motorMsg) $("motor-estado").textContent = motorMsg;
 }
 document.getElementById("paso6").addEventListener("input", actualizarPaso6);
