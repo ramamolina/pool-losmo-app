@@ -197,7 +197,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
   </header>
 
   <dialog id="vista" aria-labelledby="vista-t"><h2 id="vista-t"></h2><div id="vista-cuerpo"></div><div class="row"><button type="button" id="vista-no">Cancelar</button><button type="button" class="primary" id="vista-si"></button></div></dialog>
-  <input type="file" id="f-cond" accept=".xlsx" hidden><input type="file" id="f-cond3" accept=".xlsx" hidden><input type="file" id="f-dist" accept=".xlsx" hidden>
+  <input type="file" id="f-cond" accept=".xlsx,.docx,.pdf" hidden><input type="file" id="f-cond3" accept=".xlsx,.docx,.pdf" hidden><input type="file" id="f-dist" accept=".xlsx,.docx,.pdf" hidden>
   <div id="paso1" class="wrap" style="padding:0">
   <section class="card" aria-labelledby="h-archivo">
     <h2 id="h-archivo">Archivo cargado</h2>
@@ -205,7 +205,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
     <div class="small" id="archivo-meta"></div>
     <div class="row">
       <button type="button" id="b-subir">Subir otro PDF o Excel</button>
-      <input type="file" id="f-fixture" accept=".pdf,application/pdf,.xls,.xlsx" hidden>
+      <input type="file" id="f-fixture" accept=".pdf,application/pdf,.xls,.xlsx,.docx" hidden>
       <button type="button" id="b-manual">Cargar a mano</button>
     </div>
     <div class="alert info" id="aviso-proto" hidden></div>
@@ -248,7 +248,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
   <div id="paso2" class="wrap" style="display:none;padding:0">
   <section class="card" aria-labelledby="h-arch2">
     <h2 id="h-arch2">Lista de conductores y autos</h2>
-    <div class="small">Subí un Excel (.xlsx) con la lista, o cargá a mano. La app lee nombre, iniciales, capacidad del auto y, si las trae, las fechas en que no puede. Word y PDF vienen después.</div>
+    <div class="small">Subí un Excel, Word o PDF con la lista, o cargá a mano. La app lee nombre, iniciales, capacidad del auto y, si las trae, las fechas en que no puede.</div>
     <div class="row">
       <button type="button" id="b-subir2">Subir Excel, Word o PDF</button>
       <button type="button" id="b-agregar2" class="primary">Agregar conductor</button>
@@ -346,7 +346,7 @@ textarea{width:100%;font:inherit;color:inherit;border:1px solid var(--line);bord
     <h2 id="h-di">Distancias a cada cancha</h2>
     <div class="small">Kilómetros de ida y vuelta desde el punto central, por la ruta más rápida (autopistas con peaje incluidas en la ruta; el peaje no se cuenta como costo). Una fila por cancha: si jugás varias veces en la misma, se usa el mismo dato.</div>
     <div class="row">
-      <button type="button" id="b-subir5">Subir Excel de distancias</button>
+      <button type="button" id="b-subir5">Subir Excel, Word o PDF de distancias</button>
       <button type="button" id="b-calc5">Calcular con Google Maps</button>
     </div>
     <div class="tablewrap"><table id="tabla-km"></table></div>
@@ -607,17 +607,17 @@ $("f-fixture").addEventListener("change", async e => {
   const f = e.target.files[0]; e.target.value = ""; if(!f) return;
   const m = t => { $("msg-fixture").textContent = t; };
   $("aviso-proto").hidden = true;
-  if(/\.xlsx$/i.test(f.name)){
+  if(/\.(xlsx|docx)$/i.test(f.name)){
     try {
-      m("Leyendo el Excel…");
+      m("Leyendo el archivo…");
       const r = await leerExcel(f, "leerFixture");
-      if(!r.rows.length){ m("No encontré partidos en ese Excel. "+r.avisos.join(" ")); return; }
+      if(!r.rows.length){ m("No encontré partidos en ese archivo. "+r.avisos.join(" ")); return; }
       S.rows = r.rows; S.editar = false; S.confirmado = false; render();
       m(`Listo: leí ${r.rows.length} filas de ${f.name} y las puse como partidos de ${S.nombre}. Revisalas antes de confirmar.` + (r.avisos.length ? " Avisos: "+r.avisos.join(" ") : ""));
-    } catch(err){ m("No se pudo leer el Excel: "+err.message); }
+    } catch(err){ m("No se pudo leer el archivo: "+err.message); }
     return;
   }
-  if(!/\.pdf$/i.test(f.name)){ m("Solo se leen archivos PDF o Excel (.xlsx)."); return; }
+  if(!/\.pdf$/i.test(f.name)){ m("Se leen archivos PDF, Excel (.xlsx) o Word (.docx)."); return; }
   try {
     m("Leyendo el PDF…");
     const pdfjs = await import(new URL("vendor/pdf.min.mjs", location.href).href);
@@ -877,7 +877,7 @@ function dibujarPaso5(){
     const v = S5.km[s.clave], ok = v>0;
     return `<tr><td>${esc(s.nombre)}</td><td class="date">${s.fechas.map(fmt).join(", ")}</td><td><input type="text" inputmode="decimal" class="km" data-sede="${esc(s.clave)}" value="${v===undefined?"":String(v).replace(".",",")}" aria-label="Kilómetros ${esc(s.nombre)}"></td><td><span class="est ${ok?"ok":"falta"}">${ok?"Cargada":"Falta"}</span>${!ok && !sedeDe(s.clave) ? ` <a href="#" data-ir-sede="${esc(s.clave)}" class="small">Elegir cancha</a>` : ""}</td></tr>`; }).join("")}</tbody>`;
   const faltan = ss.filter(s => !(S5.km[s.clave]>0)).length;
-  $("km-nota").textContent = faltan ? `Faltan ${faltan} distancia(s). Cargalas a mano o subí el Excel.` : `${ss.length} canchas con distancia.`;
+  $("km-nota").textContent = faltan ? `Faltan ${faltan} distancia(s). Cargalas a mano o subí el archivo.` : `${ss.length} canchas con distancia.`;
   $("b-confirmar5").disabled = faltan>0;
   $("b-confirmar5").textContent = S5.confirmado ? "Distancias confirmadas · seguir" : "Confirmar distancias y seguir";
 }
@@ -1193,15 +1193,23 @@ $("b-drive-guardar").addEventListener("click", conMsg(guardarDrive));
 $("b-drive-abrir").addEventListener("click", conMsg(listarDrive));
 $("drive-lista").addEventListener("click", conMsg(async e => { const b = e.target.closest("[data-fid]"); if(b) await abrirDrive(b.dataset.fid, b.dataset.fn); }));
 
-/* ===== Subida de Excel: lectura común y vista previa (sirve para cualquier dato) ===== */
+/* ===== Subida de archivos (Excel, Word, PDF): lectura común y vista previa (sirve para cualquier dato) ===== */
 async function cargarScripts(srcs){
   for(const src of srcs) if(!document.querySelector(`script[data-v="${src}"]`))
     await new Promise((ok,ko)=>{ const sc=document.createElement("script"); sc.dataset.v=src; sc.src=src; sc.onload=ok; sc.onerror=()=>ko(new Error("Falta "+src+" (solo anda en la versión publicada).")); document.head.appendChild(sc); });
 }
 const anioFixture = () => +(S.rows[0] ? S.rows[0].iso.slice(0,4) : 2026);
-async function leerExcel(f, lector){
+async function cargarPdfjs(){
+  await cargarScripts(["vendor/lector_pdf.js"]);
+  const pdfjs = await import(new URL("vendor/pdf.min.mjs", location.href).href);
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("vendor/pdf.worker.min.mjs", location.href).href;
+  return pdfjs;
+}
+async function leerExcel(f, lector){ // sirve para Excel, Word y PDF
   await cargarScripts(["vendor/jszip.min.js","vendor/lector_tablas.js"]);
-  return LectorTablas[lector](await LectorTablas.abrir(new Uint8Array(await f.arrayBuffer())), anioFixture());
+  const bytes = new Uint8Array(await f.arrayBuffer()), esPdf = bytes[0]===0x25 && bytes[1]===0x50;
+  const filas = await LectorTablas.abrir(bytes, esPdf ? {pdfjs: await cargarPdfjs()} : undefined);
+  return LectorTablas[lector](filas, anioFixture());
 }
 function vista(titulo, html, textoOk, alOk){ // ventana de vista previa: se confirma antes de cargar
   $("vista-t").textContent = titulo; $("vista-cuerpo").innerHTML = html;
@@ -1215,22 +1223,22 @@ function msgPaso(id, t){ const e = $(id); e.textContent = t; e.hidden = !t; }
 function pedirArchivo(inputId, avisoId, lector, mostrar){
   $(inputId).addEventListener("change", async e => {
     const f = e.target.files[0]; e.target.value = ""; if(!f) return;
-    if(!/\.xlsx$/i.test(f.name)){ msgPaso(avisoId, "Por ahora se leen archivos Excel (.xlsx). Word y PDF vienen después."); return; }
+    if(!/\.(xlsx|docx|pdf)$/i.test(f.name)){ msgPaso(avisoId, "Se leen archivos Excel (.xlsx), Word (.docx) y PDF. Si es un .xls o .doc viejo, guardalo como .xlsx o .docx."); return; }
     try { msgPaso(avisoId, ""); mostrar(await leerExcel(f, lector), f.name); }
-    catch(err){ msgPaso(avisoId, "No se pudo leer el Excel: "+err.message); }
+    catch(err){ msgPaso(avisoId, "No se pudo leer el archivo: "+err.message); }
   });
 }
 
 /* conductores + fechas en que no pueden (un solo archivo puede traer las dos cosas) */
 function previaConductores(r, nombreArchivo, avisoId){
-  if(!r.drivers.length){ msgPaso(avisoId, "No encontré conductores en ese Excel. "+r.avisos.join(" ")); return; }
+  if(!r.drivers.length){ msgPaso(avisoId, "No encontré conductores en ese archivo. "+r.avisos.join(" ")); return; }
   const juego = new Set(fechasJuego().map(x=>x.iso));
   const tabla = unidad => `<table><thead><tr><th>Iniciales</th><th>Nombre</th><th>Asientos</th><th>No puede (fechas de partido)</th></tr></thead><tbody>${r.drivers.map(d => {
     const as = !unidad ? `${d.cap} (¿incluye al conductor?)` : unidad==="pasajeros" ? d.cap+1 : d.cap, af = d.no.filter(f=>juego.has(f));
     return `<tr><td><b>${esc(d.ini||"—")}</b></td><td>${esc(d.nombre)}</td><td>${as}</td><td>${af.length ? af.map(fmt).join(", ") : (d.no.length ? "ninguna cae en un partido" : "—")}</td></tr>`; }).join("")}</tbody></table>`;
   vista("Conductores de "+nombreArchivo,
     `<div class="small">Revisá que se haya leído bien antes de cargar. Reemplaza la lista de conductores y las fechas en que no pueden.</div>
-     <label class="small" style="display:block;margin:8px 0">La capacidad del Excel cuenta
+     <label class="small" style="display:block;margin:8px 0">La capacidad del archivo cuenta
        <select id="v-unidad"><option value="">Elegí una opción…</option><option value="pasajeros">solo los pasajeros (el conductor se suma)</option><option value="asientos">todos los asientos, conductor incluido</option></select></label>
      <div class="small">${r.unidad==="pasajeros" ? "El título de la columna dice «pasajeros», pero conviene confirmarlo." : "El título de la columna no aclara si cuenta al conductor."}</div>
      <div id="v-tabla">${tabla("")}</div>${listaAvisos(r.avisos)}`,
@@ -1260,17 +1268,17 @@ pedirArchivo("f-dist", "aviso-proto5", "leerDistancias", (r, nombre) => {
     if(!d){ faltan.push(p); return; }
     usadas.add(d);
     const cond = norm(d.local).includes(club) ? "L" : "V";
-    if(cond!==p.cond){ av.push(`${fmt(p.iso)}: en el Excel sos ${cond==="L"?"local":"visitante"} y en el fixture ${p.cond==="L"?"local":"visitante"}. No se carga.`); return; }
+    if(cond!==p.cond){ av.push(`${fmt(p.iso)}: en el archivo sos ${cond==="L"?"local":"visitante"} y en el fixture ${p.cond==="L"?"local":"visitante"}. No se carga.`); return; }
     const k = claveSede(p);
     if(k in aplicar && aplicar[k]!==d.km) av.push(`${fmt(p.iso)}: ${p.cond==="L"?"cancha propia":p.rival} ya tenía ${fnum(aplicar[k])} km y acá dice ${fnum(d.km)}. Queda el primero.`);
     else { aplicar[k] = d.km; filas.push({iso:p.iso, cancha: p.cond==="L" ? "Los Molinos (cancha propia)" : p.rival, km:d.km, arch:d.kmArchivo}); }
   });
-  faltan.filter(p => !(claveSede(p) in aplicar)).forEach(p => av.push(`${fmt(p.iso)} (${p.cond==="L"?"local":"vs "+p.rival}): el Excel no trae esa fecha.`));
+  faltan.filter(p => !(claveSede(p) in aplicar)).forEach(p => av.push(`${fmt(p.iso)} (${p.cond==="L"?"local":"vs "+p.rival}): el archivo no trae esa fecha.`));
   const sobran = r.rows.filter(x => !usadas.has(x));
-  if(sobran.length) av.push(`El Excel trae ${sobran.length} fecha(s) que no están en el fixture de ${S.nombre}: ${sobran.map(x=>fmt(x.iso)).join(", ")}.`);
+  if(sobran.length) av.push(`El archivo trae ${sobran.length} fecha(s) que no están en el fixture de ${S.nombre}: ${sobran.map(x=>fmt(x.iso)).join(", ")}.`);
   vista("Distancias de "+nombre,
-    `<div class="small">${r.idaVuelta ? "El Excel trae km de ida y vuelta." : "El Excel trae km de <b>ida</b>: se multiplican por 2 para tener ida y vuelta."}</div>
-     <table><thead><tr><th>Fecha</th><th>Cancha</th><th>Km del Excel</th><th>Km ida y vuelta</th></tr></thead><tbody>${filas.map(x=>`<tr><td>${fmt(x.iso)}</td><td>${esc(x.cancha)}</td><td>${fnum(x.arch)}</td><td><b>${fnum(x.km)}</b></td></tr>`).join("")}</tbody></table>${listaAvisos(av)}`,
+    `<div class="small">${r.idaVuelta ? "El archivo trae km de ida y vuelta." : "El archivo trae km de <b>ida</b>: se multiplican por 2 para tener ida y vuelta."}</div>
+     <table><thead><tr><th>Fecha</th><th>Cancha</th><th>Km del archivo</th><th>Km ida y vuelta</th></tr></thead><tbody>${filas.map(x=>`<tr><td>${fmt(x.iso)}</td><td>${esc(x.cancha)}</td><td>${fnum(x.arch)}</td><td><b>${fnum(x.km)}</b></td></tr>`).join("")}</tbody></table>${listaAvisos(av)}`,
     Object.keys(aplicar).length ? `Cargar ${Object.keys(aplicar).length} distancias` : "", Object.keys(aplicar).length ? () => {
       S5.sembrado = true; Object.assign(S5.km, aplicar); cambioKm(); msgPaso("aviso-proto5",""); dibujarPaso5(); } : null);
 });

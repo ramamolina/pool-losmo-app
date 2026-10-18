@@ -150,6 +150,51 @@
     return { rows, idaVuelta, avisos };
   }
 
-  const abrir = async (bytes) => leerHoja(bytes);
-  g.LectorTablas = { abrir, leerHoja, aFecha, fechasEnTexto, leerFixture, leerConductores, leerDistancias, ESQUEMAS };
+  /* ---------- Word (.docx): tablas del documento; si no hay, párrafos separados por tab o 2+ espacios ---------- */
+  async function leerDocx(bytes) {
+    const zip = await g.JSZip.loadAsync(bytes), f = zip.file("word/document.xml");
+    if (!f) throw new Error("No encontré el contenido del Word.");
+    const doc = new DOMParser().parseFromString(await f.async("string"), "application/xml");
+    const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const hijos = (el, tag) => [...el.childNodes].filter(n => n.localName === tag && n.namespaceURI === W);
+    const textoDe = el => { let t = ""; (function rec(n) { for (const h of n.childNodes) {
+      if (h.namespaceURI !== W) continue;
+      if (h.localName === "t") t += h.textContent; else if (h.localName === "tab") t += "\t"; else if (h.localName === "br") t += " ";
+      else if (h.localName === "p" && t && !t.endsWith(" ")) { t += " "; rec(h); } else rec(h); } })(el); return t.replace(/\s+/g, " ").trim(); };
+    const filas = [];
+    for (const tbl of doc.getElementsByTagNameNS(W, "tbl"))
+      for (const tr of hijos(tbl, "tr")) filas.push(hijos(tr, "tc").map(tc => textoDe(tc)));
+    if (filas.length) return filas;
+    const cuerpo = doc.getElementsByTagNameNS(W, "body")[0], out = [];
+    for (const p of cuerpo ? hijos(cuerpo, "p") : []) {
+      const t = (() => { let x = ""; for (const n of p.getElementsByTagNameNS(W, "*")) { if (n.localName === "t") x += n.textContent; else if (n.localName === "tab") x += "\t"; } return x; })();
+      if (t.trim()) out.push(t.trim().split(/\t+|\s{2,}/).map(c => c.trim()));
+    }
+    return out;
+  }
+
+  /* ---------- PDF: cada línea de texto se parte en celdas donde hay 2+ espacios (las columnas quedan alineadas) ---------- */
+  async function leerPdf(bytes, pdfjs) {
+    if (!pdfjs || !g.LectorPDF) throw new Error("Falta el lector de PDF.");
+    let filas = await g.LectorPDF.leerTabla(pdfjs, bytes);
+    if (!filas || !filas.length) {                      // sin columnas claras: se parte cada línea donde hay 2+ espacios
+      filas = [];
+      for (const t of await g.LectorPDF.leerPaginas(pdfjs, bytes)) for (const l of t.split("\n")) if (l.trim()) filas.push(l.trim().split(/\s{2,}/));
+    }
+    if (!filas.length) throw new Error("El PDF no tiene texto (¿es una foto o un escaneo?). Probá con una versión en Excel o Word.");
+    return filas;
+  }
+
+  /* Abre cualquier archivo con tablas: PDF, Word o Excel (se reconoce por el contenido, no por la extensión). */
+  async function abrir(bytes, opc) {
+    const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    if (u.length > 4 && String.fromCharCode(u[0], u[1], u[2], u[3]) === "%PDF") return leerPdf(u, opc && opc.pdfjs);
+    if (u[0] === 0x50 && u[1] === 0x4b) {
+      const zip = await g.JSZip.loadAsync(u);
+      if (zip.file("word/document.xml")) return leerDocx(u);
+      return leerHoja(u);
+    }
+    throw new Error("No reconozco el formato. Se leen Excel (.xlsx), Word (.docx) y PDF.");
+  }
+  g.LectorTablas = { abrir, leerHoja, leerDocx, leerPdf, aFecha, fechasEnTexto, leerFixture, leerConductores, leerDistancias, ESQUEMAS };
 })(globalThis);
